@@ -1,0 +1,26 @@
+name: Build ManaplaceUtils
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/com/devkit/utils/ManaplaceUtils.java'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build AIX Extension
+        id: build
+        uses: pavi2410/AIX-Action@main
+        with:
+          source-dir: 'src'
+          package-name: 'com.devkit.utils'
+
+      - name: Upload Extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: ManaplaceUtils
+          path: ${{ steps.build.outputs.extension-path }}
