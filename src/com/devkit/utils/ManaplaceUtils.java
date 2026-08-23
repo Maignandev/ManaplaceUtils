@@ -1,9 +1,9 @@
 package com.devkit.utils;
 
-import android.animation.ValueAnimator;
 import android.app.Activity;
-import android.app.Dialog;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -15,7 +15,6 @@ import android.graphics.Rect;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
@@ -23,14 +22,12 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
-import android.util.DisplayMetrics;
+import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
-import android.view.Window;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -50,22 +47,16 @@ import com.google.appinventor.components.runtime.util.MediaUtil;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 @DesignerComponent(
-        version = 9,
+        version = 8,
         description = "Extension ManaplaceUtils mise à jour pour Kodular.",
         category = ComponentCategory.EXTENSION,
         nonVisible = true
@@ -77,452 +68,231 @@ import java.util.List;
                 "android.permission.READ_MEDIA_IMAGES," +
                 "android.permission.INTERNET"
 )
-public class ManaplaceUtils extends AndroidNonvisibleComponent implements ActivityResultListener {
+public class ManaplaceUtils extends AndroidNonvisibleComponent
+        implements ActivityResultListener {
 
     private final Context context;
     private final Activity activity;
-    private final Form monForm;
-    private Dialog activeAlphaDialog;
-    private final int PICK_IMAGE_REQUEST = 1001;
+    private final Form form;
+    private final int requestCode;
 
     private Typeface customTypeface = Typeface.DEFAULT;
     private int radioButtonColor = Color.parseColor("#C01A1A1B");
+    private AlertDialog currentAlphaDialog = null;
 
-    // =========================================================================
-    // 0. BARRE DE NAVIGATION FLOTTANTE
-    // =========================================================================
+    // =========================================================
+    // NAVIGATION
+    // =========================================================
 
-    private boolean dejaInitialise = false;
-    private int tailleIconeDp = 26;
-    private final List<String> idsEnAttente = new ArrayList<>();
-    private final List<String> iconesEnAttente = new ArrayList<>();
-    private final List<ImageView> vuesIcones = new ArrayList<>();
-    private final List<View> vuesCercles = new ArrayList<>();
-    private final List<String> idsFinaux = new ArrayList<>();
-    private String idSelectionne = null;
+    private boolean navBarInitialized = false;
+
+    private int navIconSizeDp = 26;
+
+    private final List<String> navIds = new ArrayList<String>();
+    private final List<String> navIcons = new ArrayList<String>();
+
+    private final List<ImageView> navImages =
+            new ArrayList<ImageView>();
+
+    private final List<View> navCircles =
+            new ArrayList<View>();
+
+    private String selectedNavId = null;
+
+    private FrameLayout navBarRoot = null;
+    private LinearLayout navBarView = null;
+
+    // =========================================================
+    // CONSTRUCTOR
+    // =========================================================
 
     public ManaplaceUtils(ComponentContainer container) {
         super(container.$form());
+
         this.context = container.$context();
         this.activity = (Activity) container.$context();
-        this.monForm = container.$form();
-        this.form.registerForActivityResult(this);
+        this.form = container.$form();
+
+        this.requestCode =
+                form.registerForActivityResult(this);
     }
 
-    private float dpToPx(int dp) {
-        return TypedValue.applyDimension(
+    // =========================================================
+    // UTILITAIRES
+    // =========================================================
+
+    private int dpToPx(int dp) {
+        return (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP,
                 dp,
                 context.getResources().getDisplayMetrics()
         );
     }
 
-    // =========================================================================
-    // 0. BARRE DE NAVIGATION FLOTTANTE — VERSION DE B
-    // =========================================================================
+    private ViewGroup getRealLayout(
+            AndroidViewComponent component) {
 
-    @SimpleFunction(description = "Ajoute une icône à la barre de navigation. À appeler une fois par icône, avant NavBarInitialize.")
-    public void NavBarAdd(String id, String icon) {
-        if (idsEnAttente.contains(id)) {
-            NavBarError("Id déjà utilisé: " + id);
-            return;
+        if (component == null) {
+            return null;
         }
 
-        idsEnAttente.add(id);
-        iconesEnAttente.add(icon);
+        View view = component.getView();
+
+        if (!(view instanceof ViewGroup)) {
+            return null;
+        }
+
+        return (ViewGroup) view;
     }
 
-    @SimpleFunction(description = "Construit et affiche la barre flottante avec toutes les icônes ajoutées via NavBarAdd.")
-    public void NavBarInitialize(int margeBas, double largeurPourcent, double hauteurPourcent) {
-        if (dejaInitialise) return;
+    private void runOnUi(Runnable runnable) {
+        activity.runOnUiThread(runnable);
+    }
 
-        if (idsEnAttente.isEmpty()) {
-            NavBarError("Aucune icône ajoutée — appelle NavBarAdd avant NavBarInitialize");
+    // =========================================================
+    // CHARGEMENT IMAGE ASYNCHRONE
+    // =========================================================
+
+    private void loadImageAsync(
+            final ImageView imageView,
+            final String imagePath) {
+
+        if (imagePath == null ||
+                imagePath.trim().isEmpty()) {
             return;
         }
 
-        try {
-            FrameLayout root =
-                    (FrameLayout) activity.findViewById(android.R.id.content);
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            public void run() {
 
-            if (root == null) {
-                NavBarError("Écran racine introuvable");
-                return;
-            }
-
-            DisplayMetrics metrics =
-                    activity.getResources().getDisplayMetrics();
-
-            int largeurFinale =
-                    (largeurPourcent > 0)
-                            ? (int) (metrics.widthPixels *
-                            (largeurPourcent / 100.0))
-                            : ViewGroup.LayoutParams.WRAP_CONTENT;
-
-            int hauteurFinale =
-                    (hauteurPourcent > 0)
-                            ? (int) (metrics.heightPixels *
-                            (hauteurPourcent / 100.0))
-                            : (int) dpToPx(64);
-
-            LinearLayout bar = new LinearLayout(activity);
-            bar.setOrientation(LinearLayout.HORIZONTAL);
-            bar.setGravity(Gravity.CENTER);
-            bar.setWeightSum(idsEnAttente.size());
-
-            GradientDrawable fond = new GradientDrawable();
-            fond.setColor(Color.WHITE);
-            fond.setCornerRadius(dpToPx(30));
-            bar.setBackground(fond);
-
-            // VERSION B
-            bar.setElevation(dpToPx(12));
-
-            for (int i = 0; i < idsEnAttente.size(); i++) {
-
-                final String tabId = idsEnAttente.get(i);
-                String iconFile = iconesEnAttente.get(i);
-
-                FrameLayout conteneur = new FrameLayout(activity);
-
-                LinearLayout.LayoutParams pConteneur =
-                        new LinearLayout.LayoutParams(
-                                0,
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                1f
-                        );
-
-                conteneur.setLayoutParams(pConteneur);
-
-                View cercle = new View(activity);
-
-                GradientDrawable fondCercle = new GradientDrawable();
-                fondCercle.setShape(GradientDrawable.OVAL);
-                fondCercle.setColor(Color.argb(30, 0, 0, 0));
-
-                cercle.setBackground(fondCercle);
-                cercle.setAlpha(0f);
-
-                FrameLayout.LayoutParams pCercle =
-                        new FrameLayout.LayoutParams(
-                                (int) dpToPx(46),
-                                (int) dpToPx(46),
-                                Gravity.CENTER
-                        );
-
-                conteneur.addView(cercle, pCercle);
-
-                ImageView img = new ImageView(activity);
-                img.setAdjustViewBounds(true);
+                Bitmap bmp = null;
+                InputStream input = null;
+                HttpURLConnection conn = null;
 
                 try {
-                    Drawable d =
-                            MediaUtil.getBitmapDrawable(monForm, iconFile);
 
-                    img.setImageDrawable(d);
+                    if (imagePath.startsWith("http://") ||
+                            imagePath.startsWith("https://")) {
 
-                    img.setColorFilter(
-                            new PorterDuffColorFilter(
-                                    Color.rgb(150, 150, 150),
-                                    PorterDuff.Mode.SRC_IN
-                            )
-                    );
+                        URL url = new URL(imagePath);
 
-                } catch (IOException e) {
-                    NavBarError("Icône introuvable: " + iconFile);
-                }
+                        conn = (HttpURLConnection)
+                                url.openConnection();
 
-                int taillePx = (int) dpToPx(tailleIconeDp);
+                        conn.setConnectTimeout(15000);
+                        conn.setReadTimeout(15000);
+                        conn.setDoInput(true);
+                        conn.connect();
 
-                FrameLayout.LayoutParams pImg =
-                        new FrameLayout.LayoutParams(
-                                taillePx,
-                                taillePx,
-                                Gravity.CENTER
-                        );
+                        input = conn.getInputStream();
 
-                conteneur.addView(img, pImg);
+                        bmp = BitmapFactory.decodeStream(input);
 
-                final View cercleFinal = cercle;
-                final ImageView imgFinal = img;
+                    } else if (imagePath.startsWith("content://")) {
 
-                conteneur.setOnClickListener(
-                        new View.OnClickListener() {
-                            @Override
-                            public void onClick(View v) {
-                                SelectionnerOnglet(
-                                        tabId,
-                                        cercleFinal,
-                                        imgFinal
+                        input = context
+                                .getContentResolver()
+                                .openInputStream(
+                                        Uri.parse(imagePath)
                                 );
-                            }
+
+                        if (input != null) {
+                            bmp = BitmapFactory.decodeStream(input);
                         }
-                );
 
-                vuesIcones.add(img);
-                vuesCercles.add(cercle);
-                idsFinaux.add(tabId);
+                    } else {
 
-                bar.addView(conteneur);
-            }
+                        try {
 
-            FrameLayout.LayoutParams params =
-                    new FrameLayout.LayoutParams(
-                            largeurFinale,
-                            hauteurFinale
-                    );
+                            input = context
+                                    .getAssets()
+                                    .open(imagePath);
 
-            params.gravity =
-                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+                            bmp = BitmapFactory.decodeStream(input);
 
-            params.setMargins(
-                    0,
-                    0,
-                    0,
-                    (int) dpToPx(margeBas)
-            );
+                        } catch (Exception assetError) {
 
-            root.addView(bar, params);
+                            try {
 
-            dejaInitialise = true;
+                                bmp = MediaUtil
+                                        .getBitmapDrawable(
+                                                form,
+                                                imagePath
+                                        )
+                                        .getBitmap();
 
-        } catch (Exception e) {
-            NavBarError(
-                    "Erreur inattendue: " + e.getMessage()
-            );
-        }
-    }
+                            } catch (Exception mediaError) {
 
-    @SimpleFunction(description = "Ajuste la taille de toutes les icônes de la barre en dp, avec une transition animée.")
-    public void NavBarSetIconSize(final int tailleDp) {
+                                File file =
+                                        new File(imagePath);
 
-        final int ancienneTailleDp = tailleIconeDp;
-        tailleIconeDp = tailleDp;
+                                if (file.exists()) {
 
-        if (vuesIcones.isEmpty()) return;
+                                    input =
+                                            new FileInputStream(file);
 
-        try {
-
-            final float ancienPx =
-                    dpToPx(ancienneTailleDp);
-
-            final float nouveauPx =
-                    dpToPx(tailleDp);
-
-            ValueAnimator anim =
-                    ValueAnimator.ofFloat(
-                            ancienPx,
-                            nouveauPx
-                    );
-
-            anim.setDuration(220);
-
-            anim.setInterpolator(
-                    new DecelerateInterpolator()
-            );
-
-            anim.addUpdateListener(
-                    new ValueAnimator.AnimatorUpdateListener() {
-                        @Override
-                        public void onAnimationUpdate(
-                                ValueAnimator animation) {
-
-                            int taillePx =
-                                    (int) (float)
-                                            animation.getAnimatedValue();
-
-                            for (ImageView iv : vuesIcones) {
-
-                                ViewGroup.LayoutParams p =
-                                        iv.getLayoutParams();
-
-                                p.width = taillePx;
-                                p.height = taillePx;
-
-                                iv.setLayoutParams(p);
+                                    bmp =
+                                            BitmapFactory
+                                                    .decodeStream(input);
+                                }
                             }
                         }
                     }
-            );
 
-            anim.start();
+                } catch (Exception e) {
 
-        } catch (Exception e) {
+                    e.printStackTrace();
 
-            NavBarError(
-                    "Erreur NavBarSetIconSize: "
-                            + e.getMessage()
-            );
-        }
-    }
+                } finally {
 
-    @SimpleFunction(description = "Sélectionne un onglet de la barre par code, sans clic.")
-    public void NavBarSelect(String id) {
+                    if (input != null) {
 
-        int index = idsFinaux.indexOf(id);
+                        try {
+                            input.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
 
-        if (index < 0) {
-            NavBarError(
-                    "Id introuvable pour NavBarSelect: "
-                            + id
-            );
-            return;
-        }
+                    if (conn != null) {
+                        conn.disconnect();
+                    }
+                }
 
-        SelectionnerOnglet(
-                id,
-                vuesCercles.get(index),
-                vuesIcones.get(index)
-        );
-    }
+                final Bitmap finalBmp = bmp;
 
-    private void SelectionnerOnglet(
-            String id,
-            View cercle,
-            ImageView img) {
+                if (finalBmp != null) {
 
-        try {
+                    activity.runOnUiThread(
+                            new Runnable() {
+                                @Override
+                                public void run() {
 
-            if (id.equals(idSelectionne)) return;
+                                    if (imageView != null &&
+                                            imageView.getWindowToken()
+                                                    != null) {
 
-            if (idSelectionne != null) {
-
-                int ancienIndex =
-                        idsFinaux.indexOf(idSelectionne);
-
-                if (ancienIndex >= 0) {
-
-                    animerOnglet(
-                            vuesCercles.get(ancienIndex),
-                            vuesIcones.get(ancienIndex),
-                            false
+                                        imageView
+                                                .setImageBitmap(
+                                                        finalBmp
+                                                );
+                                    }
+                                }
+                            }
                     );
                 }
             }
-
-            animerOnglet(
-                    cercle,
-                    img,
-                    true
-            );
-
-            idSelectionne = id;
-
-            OnSelected(id);
-
-        } catch (Exception e) {
-
-            NavBarError(
-                    "Erreur de sélection: "
-                            + e.getMessage()
-            );
-        }
+        });
     }
 
-    private void animerOnglet(
-            final View cercle,
-            final ImageView img,
-            boolean selectionne) {
+    // =========================================================
+    // CUSTOM FONT
+    // =========================================================
 
-        float alphaCible =
-                selectionne ? 1f : 0f;
-
-        ValueAnimator anim =
-                ValueAnimator.ofFloat(
-                        cercle.getAlpha(),
-                        alphaCible
-                );
-
-        anim.setDuration(220);
-
-        anim.setInterpolator(
-                new DecelerateInterpolator()
-        );
-
-        anim.addUpdateListener(
-                new ValueAnimator.AnimatorUpdateListener() {
-
-                    @Override
-                    public void onAnimationUpdate(
-                            ValueAnimator animation) {
-
-                        float val =
-                                (float)
-                                        animation.getAnimatedValue();
-
-                        cercle.setAlpha(val);
-
-                        int couleur =
-                                melangerCouleurs(
-                                        Color.rgb(
-                                                150,
-                                                150,
-                                                150
-                                        ),
-                                        Color.rgb(
-                                                20,
-                                                20,
-                                                20
-                                        ),
-                                        val
-                                );
-
-                        img.setColorFilter(
-                                new PorterDuffColorFilter(
-                                        couleur,
-                                        PorterDuff.Mode.SRC_IN
-                                )
-                        );
-                    }
-                }
-        );
-
-        anim.start();
-    }
-
-    private int melangerCouleurs(
-            int c1,
-            int c2,
-            float ratio) {
-
-        int r =
-                (int) (
-                        Color.red(c1)
-                                + ratio *
-                                (
-                                        Color.red(c2)
-                                                - Color.red(c1)
-                                )
-                );
-
-        int g =
-                (int) (
-                        Color.green(c1)
-                                + ratio *
-                                (
-                                        Color.green(c2)
-                                                - Color.green(c1)
-                                )
-                );
-
-        int b =
-                (int) (
-                        Color.blue(c1)
-                                + ratio *
-                                (
-                                        Color.blue(c2)
-                                                - Color.blue(c1)
-                                )
-                );
-
-        return Color.rgb(r, g, b);
-    }
-
-    // =========================================================================
-    // POLICE PERSONNALISÉE
-    // =========================================================================
-
-    @SimpleFunction(description = "Charge une police personnalisée .ttf ou .otf.")
+    @SimpleFunction(
+            description =
+                    "Charge une police personnalisée .ttf ou .otf."
+    )
     public void LoadCustomFont(String fontPath) {
 
         try {
@@ -553,208 +323,690 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         } catch (Exception e) {
 
             e.printStackTrace();
+
             customTypeface = Typeface.DEFAULT;
         }
     }
 
-    @SimpleFunction(description = "Définit la couleur des boutons radio.")
+    // =========================================================
+    // RADIO BUTTON
+    // =========================================================
+
+    @SimpleFunction(
+            description =
+                    "Définit la couleur des boutons radio."
+    )
     public void SetRadioButtonColor(int color) {
+
         radioButtonColor = color;
     }
 
-    // =========================================================================
-    // UTILITAIRES IMAGES
-    // =========================================================================
+    // =========================================================
+    // NAVBAR ADD
+    // =========================================================
 
-    private ViewGroup getRealLayout(
-            AndroidViewComponent component) {
+    @SimpleFunction(
+            description =
+                    "Ajoute une icône à la barre de navigation."
+    )
+    public void NavBarAdd(
+            AndroidViewComponent container,
+            String title,
+            String iconName) {
 
-        if (component == null) return null;
+        if (title == null ||
+                title.trim().isEmpty()) {
 
-        View view = component.getView();
-
-        if (view instanceof ViewGroup) {
-
-            ViewGroup vg = (ViewGroup) view;
-
-            if (vg.getChildCount() > 0 &&
-                    vg.getChildAt(0) instanceof ViewGroup) {
-
-                return (ViewGroup) vg.getChildAt(0);
-            }
-
-            return vg;
+            OnError("NavBarAdd: ID vide.");
+            return;
         }
 
-        return null;
+        if (navIds.contains(title)) {
+
+            OnError(
+                    "NavBarAdd: ID déjà utilisé: "
+                            + title
+            );
+
+            return;
+        }
+
+        navIds.add(title);
+
+        navIcons.add(
+                iconName == null
+                        ? ""
+                        : iconName
+        );
     }
 
-    private void runOnUi(Runnable runnable) {
-        activity.runOnUiThread(runnable);
+    // =========================================================
+    // NAVBAR INITIALIZE
+    // =========================================================
+
+    @SimpleFunction(
+            description =
+                    "Initialise la barre de navigation flottante."
+    )
+    public void NavBarInitialize(
+            final AndroidViewComponent container) {
+
+        if (navBarInitialized) {
+            return;
+        }
+
+        if (navIds.isEmpty()) {
+
+            OnError(
+                    "NavBarInitialize: aucune icône ajoutée."
+            );
+
+            return;
+        }
+
+        /*
+         * IMPORTANT :
+         *
+         * Screen.Initialize peut être appelé avant que
+         * l'arbre graphique Android soit complètement rendu.
+         *
+         * On utilise post() pour attendre que le DecorView
+         * soit prêt.
+         */
+
+        final Handler handler =
+                new Handler(Looper.getMainLooper());
+
+        handler.post(new Runnable() {
+
+            @Override
+            public void run() {
+
+                if (navBarInitialized) {
+                    return;
+                }
+
+                try {
+
+                    View contentView =
+                            activity.getWindow()
+                                    .getDecorView()
+                                    .findViewById(
+                                            android.R.id.content
+                                    );
+
+                    if (!(contentView instanceof FrameLayout)) {
+
+                        /*
+                         * Si Android n'a pas encore créé
+                         * le content root, on réessaie.
+                         */
+
+                        handler.postDelayed(
+                                this,
+                                100
+                        );
+
+                        return;
+                    }
+
+                    final FrameLayout contentRoot =
+                            (FrameLayout) contentView;
+
+                    // =================================================
+                    // ROOT NAVIGATION
+                    // =================================================
+
+                    navBarRoot =
+                            new FrameLayout(activity);
+
+                    navBarRoot.setClipChildren(false);
+                    navBarRoot.setClipToPadding(false);
+
+                    FrameLayout.LayoutParams rootParams =
+                            new FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                            );
+
+                    contentRoot.addView(
+                            navBarRoot,
+                            rootParams
+                    );
+
+                    // =================================================
+                    // BAR
+                    // =================================================
+
+                    navBarView =
+                            new LinearLayout(activity);
+
+                    navBarView.setOrientation(
+                            LinearLayout.HORIZONTAL
+                    );
+
+                    navBarView.setGravity(
+                            Gravity.CENTER
+                    );
+
+                    navBarView.setPadding(
+                            dpToPx(4),
+                            dpToPx(4),
+                            dpToPx(4),
+                            dpToPx(4)
+                    );
+
+                    GradientDrawable background =
+                            new GradientDrawable();
+
+                    background.setColor(Color.WHITE);
+
+                    background.setCornerRadius(
+                            dpToPx(30)
+                    );
+
+                    navBarView.setBackground(
+                            background
+                    );
+
+                    if (Build.VERSION.SDK_INT >=
+                            Build.VERSION_CODES.LOLLIPOP) {
+
+                        navBarView.setElevation(
+                                dpToPx(10)
+                        );
+                    }
+
+                    // =================================================
+                    // ITEMS
+                    // =================================================
+
+                    for (int i = 0;
+                         i < navIds.size();
+                         i++) {
+
+                        final String id =
+                                navIds.get(i);
+
+                        final String icon =
+                                navIcons.get(i);
+
+                        FrameLayout item =
+                                new FrameLayout(activity);
+
+                        LinearLayout.LayoutParams itemParams =
+                                new LinearLayout.LayoutParams(
+                                        0,
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        1f
+                                );
+
+                        itemParams.setMargins(
+                                dpToPx(2),
+                                0,
+                                dpToPx(2),
+                                0
+                        );
+
+                        item.setLayoutParams(
+                                itemParams
+                        );
+
+                        // =================================================
+                        // CIRCLE
+                        // =================================================
+
+                        View circle =
+                                new View(activity);
+
+                        GradientDrawable circleBg =
+                                new GradientDrawable();
+
+                        circleBg.setShape(
+                                GradientDrawable.OVAL
+                        );
+
+                        circleBg.setColor(
+                                Color.argb(
+                                        30,
+                                        0,
+                                        0,
+                                        0
+                                )
+                        );
+
+                        circle.setBackground(
+                                circleBg
+                        );
+
+                        circle.setAlpha(0f);
+
+                        FrameLayout.LayoutParams circleParams =
+                                new FrameLayout.LayoutParams(
+                                        dpToPx(46),
+                                        dpToPx(46)
+                                );
+
+                        circleParams.gravity =
+                                Gravity.CENTER;
+
+                        item.addView(
+                                circle,
+                                circleParams
+                        );
+
+                        // =================================================
+                        // ICON
+                        // =================================================
+
+                        final ImageView image =
+                                new ImageView(activity);
+
+                        image.setScaleType(
+                                ImageView.ScaleType.CENTER_INSIDE
+                        );
+
+                        FrameLayout.LayoutParams imageParams =
+                                new FrameLayout.LayoutParams(
+                                        dpToPx(navIconSizeDp),
+                                        dpToPx(navIconSizeDp)
+                                );
+
+                        imageParams.gravity =
+                                Gravity.CENTER;
+
+                        try {
+
+                            DrawableCompatHelper
+                                    .setIcon(
+                                            image,
+                                            form,
+                                            icon
+                                    );
+
+                        } catch (Exception e) {
+
+                            try {
+
+                                image.setImageDrawable(
+                                        MediaUtil
+                                                .getBitmapDrawable(
+                                                        form,
+                                                        icon
+                                                )
+                                );
+
+                            } catch (Exception ignored) {
+                            }
+                        }
+
+                        image.setColorFilter(
+                                new PorterDuffColorFilter(
+                                        Color.rgb(
+                                                150,
+                                                150,
+                                                150
+                                        ),
+                                        PorterDuff.Mode.SRC_IN
+                                )
+                        );
+
+                        item.addView(
+                                image,
+                                imageParams
+                        );
+
+                        final View finalCircle =
+                                circle;
+
+                        final ImageView finalImage =
+                                image;
+
+                        item.setOnClickListener(
+                                new View.OnClickListener() {
+
+                                    @Override
+                                    public void onClick(
+                                            View v) {
+
+                                        selectNavItem(
+                                                id,
+                                                finalCircle,
+                                                finalImage
+                                        );
+                                    }
+                                }
+                        );
+
+                        navImages.add(image);
+                        navCircles.add(circle);
+
+                        navBarView.addView(item);
+                    }
+
+                    // =================================================
+                    // POSITION BAR
+                    // =================================================
+
+                    FrameLayout.LayoutParams barParams =
+                            new FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    dpToPx(64)
+                            );
+
+                    barParams.gravity =
+                            Gravity.BOTTOM |
+                            Gravity.CENTER_HORIZONTAL;
+
+                    barParams.leftMargin =
+                            dpToPx(12);
+
+                    barParams.rightMargin =
+                            dpToPx(12);
+
+                    barParams.bottomMargin =
+                            dpToPx(12);
+
+                    navBarRoot.addView(
+                            navBarView,
+                            barParams
+                    );
+
+                    navBarInitialized = true;
+
+                } catch (Exception e) {
+
+                    e.printStackTrace();
+
+                    OnError(
+                            "NavBarInitialize: "
+                                    + e.getMessage()
+                    );
+                }
+            }
+        });
     }
 
-    private void loadImageAsync(
-            final ImageView imageView,
-            final String imagePath) {
+    // =========================================================
+    // NAVBAR SELECT
+    // =========================================================
 
-        if (imagePath == null ||
-                imagePath.trim().isEmpty()) return;
+    @SimpleFunction(
+            description =
+                    "Sélectionne un élément de la barre de navigation par index."
+    )
+    public void NavBarSelect(
+            final int index) {
 
-        AsynchUtil.runAsynchronously(
+        if (index < 0 ||
+                index >= navIds.size()) {
+
+            OnError(
+                    "NavBarSelect: index invalide."
+            );
+
+            return;
+        }
+
+        runOnUi(
                 new Runnable() {
 
                     @Override
                     public void run() {
 
-                        Bitmap bmp = null;
-                        InputStream input = null;
-                        HttpURLConnection conn = null;
+                        View circle =
+                                navCircles.size() > index
+                                        ? navCircles.get(index)
+                                        : null;
 
-                        try {
+                        ImageView image =
+                                navImages.size() > index
+                                        ? navImages.get(index)
+                                        : null;
 
-                            if (imagePath.startsWith("http://") ||
-                                    imagePath.startsWith("https://")) {
+                        selectNavItem(
+                                navIds.get(index),
+                                circle,
+                                image
+                        );
+                    }
+                }
+        );
+    }
 
-                                URL url = new URL(imagePath);
+    // =========================================================
+    // SELECT NAV ITEM
+    // =========================================================
 
-                                conn =
-                                        (HttpURLConnection)
-                                                url.openConnection();
+    private void selectNavItem(
+            String id,
+            View circle,
+            ImageView image) {
 
-                                conn.setConnectTimeout(15000);
-                                conn.setReadTimeout(15000);
-                                conn.setDoInput(true);
-                                conn.connect();
+        if (id == null ||
+                circle == null ||
+                image == null) {
 
-                                input = conn.getInputStream();
+            return;
+        }
 
-                                bmp =
-                                        BitmapFactory.decodeStream(
-                                                input
+        if (id.equals(selectedNavId)) {
+            return;
+        }
+
+        if (selectedNavId != null) {
+
+            int oldIndex =
+                    navIds.indexOf(
+                            selectedNavId
+                    );
+
+            if (oldIndex >= 0 &&
+                    oldIndex < navCircles.size() &&
+                    oldIndex < navImages.size()) {
+
+                animateNavItem(
+                        navCircles.get(oldIndex),
+                        navImages.get(oldIndex),
+                        false
+                );
+            }
+        }
+
+        animateNavItem(
+                circle,
+                image,
+                true
+        );
+
+        selectedNavId = id;
+
+        OnSelected(id);
+    }
+
+    // =========================================================
+    // ANIMATION NAV ITEM
+    // =========================================================
+
+    private void animateNavItem(
+            final View circle,
+            final ImageView image,
+            boolean selected) {
+
+        final float start =
+                circle.getAlpha();
+
+        final float end =
+                selected ? 1f : 0f;
+
+        android.animation.ValueAnimator animator =
+                android.animation.ValueAnimator
+                        .ofFloat(start, end);
+
+        animator.setDuration(220);
+
+        animator.addUpdateListener(
+                new android.animation.ValueAnimator
+                        .AnimatorUpdateListener() {
+
+                    @Override
+                    public void onAnimationUpdate(
+                            android.animation.ValueAnimator animation) {
+
+                        float value =
+                                (float)
+                                        animation
+                                                .getAnimatedValue();
+
+                        circle.setAlpha(value);
+
+                        int color =
+                                mixColor(
+                                        Color.rgb(
+                                                150,
+                                                150,
+                                                150
+                                        ),
+                                        Color.rgb(
+                                                20,
+                                                20,
+                                                20
+                                        ),
+                                        value
+                                );
+
+                        image.setColorFilter(
+                                new PorterDuffColorFilter(
+                                        color,
+                                        PorterDuff.Mode.SRC_IN
+                                )
+                        );
+                    }
+                }
+        );
+
+        animator.start();
+    }
+
+    // =========================================================
+    // MIX COLOR
+    // =========================================================
+
+    private int mixColor(
+            int c1,
+            int c2,
+            float ratio) {
+
+        ratio =
+                Math.max(
+                        0f,
+                        Math.min(
+                                1f,
+                                ratio
+                        )
+                );
+
+        int r =
+                (int)
+                        (
+                                Color.red(c1)
+                                        +
+                                        ratio *
+                                                (
+                                                        Color.red(c2)
+                                                                -
+                                                                Color.red(c1)
+                                                )
+                        );
+
+        int g =
+                (int)
+                        (
+                                Color.green(c1)
+                                        +
+                                        ratio *
+                                                (
+                                                        Color.green(c2)
+                                                                -
+                                                                Color.green(c1)
+                                                )
+                        );
+
+        int b =
+                (int)
+                        (
+                                Color.blue(c1)
+                                        +
+                                        ratio *
+                                                (
+                                                        Color.blue(c2)
+                                                                -
+                                                                Color.blue(c1)
+                                                )
+                        );
+
+        return Color.rgb(r, g, b);
+    }
+
+    // =========================================================
+    // NAVBAR ICON SIZE
+    // =========================================================
+
+    @SimpleFunction(
+            description =
+                    "Définit la taille des icônes."
+    )
+    public void NavBarSetIconSize(
+            final int size) {
+
+        if (size <= 0) {
+            return;
+        }
+
+        navIconSizeDp = size;
+
+        runOnUi(
+                new Runnable() {
+
+                    @Override
+                    public void run() {
+
+                        for (ImageView image :
+                                navImages) {
+
+                            ViewGroup.LayoutParams params =
+                                    image.getLayoutParams();
+
+                            if (params != null) {
+
+                                params.width =
+                                        dpToPx(
+                                                navIconSizeDp
                                         );
 
-                            } else if (
-                                    imagePath.startsWith("content://")) {
+                                params.height =
+                                        dpToPx(
+                                                navIconSizeDp
+                                        );
 
-                                input =
-                                        context
-                                                .getContentResolver()
-                                                .openInputStream(
-                                                        Uri.parse(imagePath)
-                                                );
-
-                                if (input != null) {
-
-                                    bmp =
-                                            BitmapFactory.decodeStream(
-                                                    input
-                                            );
-                                }
-
-                            } else {
-
-                                try {
-
-                                    input =
-                                            context
-                                                    .getAssets()
-                                                    .open(imagePath);
-
-                                    bmp =
-                                            BitmapFactory.decodeStream(
-                                                    input
-                                            );
-
-                                } catch (Exception assetError) {
-
-                                    try {
-
-                                        bmp =
-                                                MediaUtil
-                                                        .getBitmapDrawable(
-                                                                monForm,
-                                                                imagePath
-                                                        )
-                                                        .getBitmap();
-
-                                    } catch (Exception mediaError) {
-
-                                        File file =
-                                                new File(imagePath);
-
-                                        if (file.exists()) {
-
-                                            input =
-                                                    new FileInputStream(
-                                                            file
-                                                    );
-
-                                            bmp =
-                                                    BitmapFactory
-                                                            .decodeStream(
-                                                                    input
-                                                            );
-                                        }
-                                    }
-                                }
+                                image.setLayoutParams(
+                                        params
+                                );
                             }
-
-                        } catch (Exception e) {
-
-                            e.printStackTrace();
-
-                        } finally {
-
-                            if (input != null) {
-
-                                try {
-                                    input.close();
-                                } catch (Exception ignored) {
-                                }
-                            }
-
-                            if (conn != null) {
-                                conn.disconnect();
-                            }
-                        }
-
-                        final Bitmap finalBmp = bmp;
-
-                        if (finalBmp != null) {
-
-                            activity.runOnUiThread(
-                                    new Runnable() {
-
-                                        @Override
-                                        public void run() {
-
-                                            if (
-                                                    imageView
-                                                            .getWindowToken()
-                                                            != null
-                                                            ||
-                                                            imageView
-                                                                    .isAttachedToWindow()
-                                            ) {
-
-                                                imageView.setImageBitmap(
-                                                        finalBmp
-                                                );
-                                            }
-                                        }
-                                    }
-                            );
                         }
                     }
                 }
         );
     }
 
-    // =========================================================================
-    // 1. MOTEUR DE CHAT DYNAMIQUE NATIVE
-    // =========================================================================
+    // =========================================================
+    // CHAT NATIF
+    // =========================================================
 
-    @SimpleFunction(description = "Ajoute une bulle de chat avec un petit avatar rond.")
+    @SimpleFunction(
+            description =
+                    "Ajoute une bulle de chat native avec avatar."
+    )
     public void AddChatBubble(
             final AndroidViewComponent chatContainer,
             final String messageText,
@@ -764,293 +1016,277 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             final int bubbleColor,
             final int textColor) {
 
-        runOnUi(new Runnable() {
-
-            @Override
-            public void run() {
-
-                try {
-
-                    ViewGroup targetLayout =
-                            getRealLayout(chatContainer);
-
-                    if (targetLayout == null) return;
-
-                    int screenWidth =
-                            activity
-                                    .getResources()
-                                    .getDisplayMetrics()
-                                    .widthPixels;
-
-                    LinearLayout row =
-                            new LinearLayout(context);
-
-                    row.setOrientation(
-                            LinearLayout.HORIZONTAL
-                    );
-
-                    row.setGravity(
-                            isMe
-                                    ? Gravity.END
-                                    : Gravity.START
-                    );
-
-                    LinearLayout.LayoutParams rowParams =
-                            new LinearLayout.LayoutParams(
-                                    LinearLayout.LayoutParams.MATCH_PARENT,
-                                    LinearLayout.LayoutParams.WRAP_CONTENT
-                            );
-
-                    rowParams.setMargins(
-                            (int) dpToPx(8),
-                            (int) dpToPx(4),
-                            (int) dpToPx(8),
-                            (int) dpToPx(4)
-                    );
-
-                    row.setLayoutParams(rowParams);
-
-                    int avatarSizePx =
-                            (int) dpToPx(32);
-
-                    CardView avatarCard =
-                            new CardView(context);
-
-                    LinearLayout.LayoutParams avatarParams =
-                            new LinearLayout.LayoutParams(
-                                    avatarSizePx,
-                                    avatarSizePx
-                            );
-
-                    avatarParams.gravity =
-                            Gravity.CENTER_VERTICAL;
-
-                    avatarParams.setMargins(
-                            (int) dpToPx(6),
-                            0,
-                            (int) dpToPx(6),
-                            0
-                    );
-
-                    avatarCard.setLayoutParams(
-                            avatarParams
-                    );
-
-                    avatarCard.setRadius(
-                            avatarSizePx / 2f
-                    );
-
-                    avatarCard.setCardElevation(0f);
-                    avatarCard.setMaxCardElevation(0f);
-
-                    avatarCard.setCardBackgroundColor(
-                            Color.parseColor("#E0E0E0")
-                    );
-
-                    ImageView avatarImg =
-                            new ImageView(context);
-
-                    avatarImg.setLayoutParams(
-                            new ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                    );
-
-                    avatarImg.setScaleType(
-                            ImageView.ScaleType.CENTER_INSIDE
-                    );
-
-                    avatarImg.setPadding(
-                            (int) dpToPx(4),
-                            (int) dpToPx(4),
-                            (int) dpToPx(4),
-                            (int) dpToPx(4)
-                    );
-
-                    if (avatarUrl != null &&
-                            !avatarUrl.isEmpty()) {
-
-                        loadImageAsync(
-                                avatarImg,
-                                avatarUrl
-                        );
-                    }
-
-                    avatarCard.addView(avatarImg);
-
-                    avatarCard.setOnClickListener(
-                            new View.OnClickListener() {
-
-                                @Override
-                                public void onClick(View v) {
-                                    OnAvatarClick(isMe);
-                                }
-                            }
-                    );
-
-                    LinearLayout bubble =
-                            new LinearLayout(context);
-
-                    bubble.setOrientation(
-                            LinearLayout.VERTICAL
-                    );
-
-                    bubble.setPadding(
-                            (int) dpToPx(16),
-                            (int) dpToPx(10),
-                            (int) dpToPx(16),
-                            (int) dpToPx(10)
-                    );
-
-                    GradientDrawable bg =
-                            new GradientDrawable();
-
-                    bg.setShape(
-                            GradientDrawable.RECTANGLE
-                    );
-
-                    bg.setColor(bubbleColor);
-
-                    bg.setCornerRadius(
-                            dpToPx(22)
-                    );
-
-                    bubble.setBackground(bg);
-
-                    int maxBubbleWidth =
-                            (int) (screenWidth * 0.72);
-
-                    LinearLayout.LayoutParams bubbleParams =
-                            new LinearLayout.LayoutParams(
-                                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                                    LinearLayout.LayoutParams.WRAP_CONTENT
-                            );
-
-                    bubble.setLayoutParams(
-                            bubbleParams
-                    );
-
-                    TextView msgTv =
-                            new TextView(context);
-
-                    msgTv.setText(messageText);
-                    msgTv.setTextColor(textColor);
-                    msgTv.setTextSize(15);
-                    msgTv.setMaxWidth(maxBubbleWidth);
-
-                    msgTv.setLayoutParams(
-                            new LinearLayout.LayoutParams(
-                                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                                    LinearLayout.LayoutParams.WRAP_CONTENT
-                            )
-                    );
-
-                    if (customTypeface != null) {
-                        msgTv.setTypeface(customTypeface);
-                    }
-
-                    bubble.addView(msgTv);
-
-                    if (timeText != null &&
-                            !timeText.isEmpty()) {
-
-                        TextView timeTv =
-                                new TextView(context);
-
-                        timeTv.setText(timeText);
-
-                        timeTv.setTextColor(
-                                Color.argb(
-                                        180,
-                                        Color.red(textColor),
-                                        Color.green(textColor),
-                                        Color.blue(textColor)
-                                )
-                        );
-
-                        timeTv.setTextSize(10);
-
-                        LinearLayout.LayoutParams timeParams =
-                                new LinearLayout.LayoutParams(
-                                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                                        LinearLayout.LayoutParams.WRAP_CONTENT
-                                );
-
-                        timeParams.gravity =
-                                Gravity.END;
-
-                        timeParams.setMargins(
-                                0,
-                                (int) dpToPx(2),
-                                0,
-                                0
-                        );
-
-                        timeTv.setLayoutParams(
-                                timeParams
-                        );
-
-                        if (customTypeface != null) {
-                            timeTv.setTypeface(
-                                    customTypeface
-                            );
-                        }
-
-                        bubble.addView(timeTv);
-                    }
-
-                    if (isMe) {
-
-                        row.addView(bubble);
-                        row.addView(avatarCard);
-
-                    } else {
-
-                        row.addView(avatarCard);
-                        row.addView(bubble);
-                    }
-
-                    targetLayout.addView(row);
-
-                    ScrollToBottom(chatContainer);
-
-                } catch (Exception e) {
-
-                    e.printStackTrace();
-                }
-            }
-        });
-    }
-
-    @SimpleFunction(description = "Fait défiler le ScrollArrangement jusqu'au tout dernier message.")
-    public void ScrollToBottom(
-            final AndroidViewComponent scrollContainer) {
-
-        activity.runOnUiThread(
+        runOnUi(
                 new Runnable() {
 
                     @Override
                     public void run() {
 
-                        View view =
-                                scrollContainer.getView();
+                        try {
 
-                        if (view instanceof ScrollView) {
+                            ViewGroup target =
+                                    getRealLayout(
+                                            chatContainer
+                                    );
 
-                            final ScrollView scrollView =
-                                    (ScrollView) view;
+                            if (target == null) {
+                                return;
+                            }
 
-                            scrollView.post(
-                                    new Runnable() {
+                            int screenWidth =
+                                    activity
+                                            .getResources()
+                                            .getDisplayMetrics()
+                                            .widthPixels;
+
+                            LinearLayout row =
+                                    new LinearLayout(
+                                            context
+                                    );
+
+                            row.setOrientation(
+                                    LinearLayout.HORIZONTAL
+                            );
+
+                            row.setGravity(
+                                    isMe
+                                            ? Gravity.END
+                                            : Gravity.START
+                            );
+
+                            LinearLayout.LayoutParams rowParams =
+                                    new LinearLayout.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.WRAP_CONTENT
+                                    );
+
+                            rowParams.setMargins(
+                                    dpToPx(8),
+                                    dpToPx(4),
+                                    dpToPx(8),
+                                    dpToPx(4)
+                            );
+
+                            row.setLayoutParams(
+                                    rowParams
+                            );
+
+                            int avatarSize =
+                                    dpToPx(32);
+
+                            CardView avatarCard =
+                                    new CardView(context);
+
+                            LinearLayout.LayoutParams avatarParams =
+                                    new LinearLayout.LayoutParams(
+                                            avatarSize,
+                                            avatarSize
+                                    );
+
+                            avatarParams.gravity =
+                                    Gravity.CENTER_VERTICAL;
+
+                            avatarParams.setMargins(
+                                    dpToPx(6),
+                                    0,
+                                    dpToPx(6),
+                                    0
+                            );
+
+                            avatarCard.setLayoutParams(
+                                    avatarParams
+                            );
+
+                            avatarCard.setRadius(
+                                    avatarSize / 2f
+                            );
+
+                            avatarCard.setCardElevation(0f);
+
+                            avatarCard.setCardBackgroundColor(
+                                    Color.parseColor(
+                                            "#E0E0E0"
+                                    )
+                            );
+
+                            ImageView avatar =
+                                    new ImageView(context);
+
+                            avatar.setLayoutParams(
+                                    new ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                            );
+
+                            avatar.setScaleType(
+                                    ImageView.ScaleType.CENTER_CROP
+                            );
+
+                            if (avatarUrl != null &&
+                                    !avatarUrl
+                                            .trim()
+                                            .isEmpty()) {
+
+                                loadImageAsync(
+                                        avatar,
+                                        avatarUrl
+                                );
+                            }
+
+                            avatarCard.addView(
+                                    avatar
+                            );
+
+                            avatarCard.setOnClickListener(
+                                    new View.OnClickListener() {
 
                                         @Override
-                                        public void run() {
-                                            scrollView.fullScroll(
-                                                    View.FOCUS_DOWN
+                                        public void onClick(
+                                                View v) {
+
+                                            OnAvatarClick(
+                                                    isMe
                                             );
                                         }
                                     }
+                            );
+
+                            LinearLayout bubble =
+                                    new LinearLayout(
+                                            context
+                                    );
+
+                            bubble.setOrientation(
+                                    LinearLayout.VERTICAL
+                            );
+
+                            bubble.setPadding(
+                                    dpToPx(16),
+                                    dpToPx(10),
+                                    dpToPx(16),
+                                    dpToPx(10)
+                            );
+
+                            GradientDrawable bg =
+                                    new GradientDrawable();
+
+                            bg.setColor(
+                                    bubbleColor
+                            );
+
+                            bg.setCornerRadius(
+                                    dpToPx(22)
+                            );
+
+                            bubble.setBackground(bg);
+
+                            TextView message =
+                                    new TextView(context);
+
+                            message.setText(
+                                    messageText
+                            );
+
+                            message.setTextColor(
+                                    textColor
+                            );
+
+                            message.setTextSize(15);
+
+                            message.setMaxWidth(
+                                    (int)
+                                            (screenWidth *
+                                                    0.72f)
+                            );
+
+                            if (customTypeface != null) {
+                                message.setTypeface(
+                                        customTypeface
+                                );
+                            }
+
+                            bubble.addView(message);
+
+                            if (timeText != null &&
+                                    !timeText.isEmpty()) {
+
+                                TextView time =
+                                        new TextView(
+                                                context
+                                        );
+
+                                time.setText(
+                                        timeText
+                                );
+
+                                time.setTextColor(
+                                        Color.argb(
+                                                180,
+                                                Color.red(
+                                                        textColor
+                                                ),
+                                                Color.green(
+                                                        textColor
+                                                ),
+                                                Color.blue(
+                                                        textColor
+                                                )
+                                        )
+                                );
+
+                                time.setTextSize(10);
+
+                                LinearLayout.LayoutParams timeParams =
+                                        new LinearLayout.LayoutParams(
+                                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                                ViewGroup.LayoutParams.WRAP_CONTENT
+                                        );
+
+                                timeParams.gravity =
+                                        Gravity.END;
+
+                                time.setLayoutParams(
+                                        timeParams
+                                );
+
+                                bubble.addView(time);
+                            }
+
+                            if (isMe) {
+
+                                row.addView(
+                                        bubble
+                                );
+
+                                row.addView(
+                                        avatarCard
+                                );
+
+                            } else {
+
+                                row.addView(
+                                        avatarCard
+                                );
+
+                                row.addView(
+                                        bubble
+                                );
+                            }
+
+                            target.addView(row);
+
+                            ScrollToBottom(
+                                    chatContainer
+                            );
+
+                        } catch (Exception e) {
+
+                            e.printStackTrace();
+
+                            OnError(
+                                    "AddChatBubble Error: "
+                                            + e.getMessage()
                             );
                         }
                     }
@@ -1058,83 +1294,182 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    // =========================================================================
-    // 2. SAISIE FLOTTANTE & CLAVIER
-    // =========================================================================
+    // =========================================================
+    // SCROLL TO BOTTOM
+    // =========================================================
 
-    @SimpleFunction(description = "Attache la zone de saisie au-dessus du clavier.")
+    @SimpleFunction(
+            description =
+                    "Fait défiler une vue vers le bas."
+    )
+    public void ScrollToBottom(
+            final AndroidViewComponent scrollComponent) {
+
+        if (scrollComponent == null) {
+            return;
+        }
+
+        final View view =
+                scrollComponent.getView();
+
+        if (view instanceof ScrollView) {
+
+            final ScrollView scrollView =
+                    (ScrollView) view;
+
+            scrollView.post(
+                    new Runnable() {
+
+                        @Override
+                        public void run() {
+
+                            scrollView.fullScroll(
+                                    View.FOCUS_DOWN
+                            );
+                        }
+                    }
+            );
+
+        } else if (view instanceof ViewGroup) {
+
+            final ViewGroup group =
+                    (ViewGroup) view;
+
+            group.post(
+                    new Runnable() {
+
+                        @Override
+                        public void run() {
+
+                            group.requestFocus();
+                        }
+                    }
+            );
+        }
+    }
+
+    // =========================================================
+    // ATTACH FLOATING INPUT
+    // =========================================================
+
+    @SimpleFunction(
+            description =
+                    "Attache la zone de saisie au-dessus du clavier avec hauteur maximale."
+    )
     public void AttachFloatingInputWithDynamicHeight(
             final AndroidViewComponent inputContainer,
-            final AndroidViewComponent editTextComponent,
+            final String editTextComponent,
             final int maxHeightPx) {
 
-        final View containerView =
+        if (inputContainer == null) {
+            return;
+        }
+
+        final View container =
                 inputContainer.getView();
 
-        final View rootView =
+        if (container == null) {
+            return;
+        }
+
+        /*
+         * editTextComponent est maintenant un String.
+         *
+         * Tu peux donc directement utiliser :
+         *
+         * TextBox.Text
+         *
+         * dans Kodular/App Inventor.
+         *
+         * La valeur n'a pas besoin d'être utilisée ici
+         * pour déplacer le container.
+         */
+
+        final String currentText =
+                editTextComponent == null
+                        ? ""
+                        : editTextComponent;
+
+        final View root =
                 activity
                         .getWindow()
                         .getDecorView()
                         .getRootView();
 
-        rootView
-                .getViewTreeObserver()
+        root.getViewTreeObserver()
                 .addOnGlobalLayoutListener(
-                        new ViewTreeObserver.OnGlobalLayoutListener() {
+                        new ViewTreeObserver
+                                .OnGlobalLayoutListener() {
 
                             @Override
                             public void onGlobalLayout() {
 
-                                Rect r = new Rect();
+                                try {
 
-                                rootView
-                                        .getWindowVisibleDisplayFrame(
-                                                r
+                                    Rect rect =
+                                            new Rect();
+
+                                    root.getWindowVisibleDisplayFrame(
+                                            rect
+                                    );
+
+                                    int screenHeight =
+                                            root.getRootView()
+                                                    .getHeight();
+
+                                    int keyboardHeight =
+                                            screenHeight
+                                                    -
+                                                    rect.bottom;
+
+                                    /*
+                                     * Clavier détecté
+                                     */
+
+                                    if (keyboardHeight >
+                                            screenHeight *
+                                                    0.15f) {
+
+                                        int translation =
+                                                keyboardHeight;
+
+                                        if (maxHeightPx > 0) {
+
+                                            translation =
+                                                    Math.min(
+                                                            translation,
+                                                            maxHeightPx
+                                                    );
+                                        }
+
+                                        container.setTranslationY(
+                                                -translation
                                         );
 
-                                int screenHeight =
-                                        rootView
-                                                .getRootView()
-                                                .getHeight();
+                                    } else {
 
-                                int keypadHeight =
-                                        screenHeight - r.bottom;
-
-                                if (keypadHeight >
-                                        screenHeight * 0.15) {
-
-                                    int translation =
-                                            keypadHeight;
-
-                                    if (maxHeightPx > 0) {
-
-                                        translation =
-                                                Math.min(
-                                                        translation,
-                                                        maxHeightPx
-                                                );
+                                        container.setTranslationY(
+                                                0
+                                        );
                                     }
 
-                                    containerView.setTranslationY(
-                                            -translation
-                                    );
+                                } catch (Exception e) {
 
-                                } else {
-
-                                    containerView.setTranslationY(
-                                            0
-                                    );
+                                    e.printStackTrace();
                                 }
                             }
                         }
                 );
     }
 
-    // =========================================================================
-    // 3. CATALOGUE DE PRODUITS 2x2 NATIVE
-    // =========================================================================
+    // =========================================================
+    // PRODUITS
+    // =========================================================
 
-    @SimpleFunction(description = "Construit la grille de produits depuis un JSON sans élévation.")
+    @SimpleFunction(
+            description =
+                    "Génère une grille 2x2 de produits depuis un JSON."
+    )
     public void BuildProductGridFromJson(
             final AndroidViewComponent scrollContainer,
             final String jsonData) {
@@ -1148,19 +1483,15 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                         try {
 
                             final JSONArray array =
-                                    new JSONArray(jsonData);
+                                    new JSONArray(
+                                            jsonData
+                                    );
 
                             final int screenWidth =
                                     activity
                                             .getResources()
                                             .getDisplayMetrics()
                                             .widthPixels;
-
-                            final int screenHeight =
-                                    activity
-                                            .getResources()
-                                            .getDisplayMetrics()
-                                            .heightPixels;
 
                             runOnUi(
                                     new Runnable() {
@@ -1170,32 +1501,35 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                                             try {
 
-                                                ViewGroup targetLayout =
+                                                ViewGroup target =
                                                         getRealLayout(
                                                                 scrollContainer
                                                         );
 
-                                                if (targetLayout ==
-                                                        null) return;
+                                                if (target == null) {
+                                                    return;
+                                                }
 
-                                                targetLayout.removeAllViews();
+                                                target.removeAllViews();
 
                                                 int cardWidth =
                                                         (int)
-                                                                (screenWidth *
-                                                                        0.44);
+                                                                (
+                                                                        screenWidth *
+                                                                                0.43f
+                                                                );
 
                                                 int cardHeight =
-                                                        (int)
-                                                                (screenHeight *
-                                                                        0.28);
+                                                        dpToPx(220);
 
-                                                LinearLayout currentRow =
+                                                LinearLayout row =
                                                         null;
 
-                                                for (int i = 0;
-                                                     i < array.length();
-                                                     i++) {
+                                                for (
+                                                        int i = 0;
+                                                        i < array.length();
+                                                        i++
+                                                ) {
 
                                                     JSONObject item =
                                                             array.getJSONObject(
@@ -1205,22 +1539,24 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                     final String uid =
                                                             item.optString(
                                                                     "uid",
-                                                                    String.valueOf(i)
+                                                                    String.valueOf(
+                                                                            i
+                                                                    )
                                                             );
 
-                                                    String imageStr =
+                                                    String image =
                                                             item.optString(
                                                                     "image",
                                                                     ""
                                                             );
 
-                                                    String titleStr =
+                                                    String title =
                                                             item.optString(
                                                                     "title",
                                                                     ""
                                                             );
 
-                                                    String priceStr =
+                                                    String price =
                                                             item.optString(
                                                                     "price",
                                                                     ""
@@ -1228,39 +1564,28 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                                                     if (i % 2 == 0) {
 
-                                                        currentRow =
+                                                        row =
                                                                 new LinearLayout(
                                                                         context
                                                                 );
 
-                                                        currentRow
-                                                                .setOrientation(
-                                                                        LinearLayout.HORIZONTAL
-                                                                );
-
-                                                        currentRow.setGravity(
-                                                                Gravity.CENTER_HORIZONTAL
+                                                        row.setOrientation(
+                                                                LinearLayout.HORIZONTAL
                                                         );
 
-                                                        LinearLayout.LayoutParams rowParams =
+                                                        row.setGravity(
+                                                                Gravity.CENTER
+                                                        );
+
+                                                        row.setLayoutParams(
                                                                 new LinearLayout.LayoutParams(
-                                                                        LinearLayout.LayoutParams.MATCH_PARENT,
-                                                                        LinearLayout.LayoutParams.WRAP_CONTENT
-                                                                );
-
-                                                        rowParams.setMargins(
-                                                                0,
-                                                                8,
-                                                                0,
-                                                                8
+                                                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                                                        ViewGroup.LayoutParams.WRAP_CONTENT
+                                                                )
                                                         );
 
-                                                        currentRow.setLayoutParams(
-                                                                rowParams
-                                                        );
-
-                                                        targetLayout.addView(
-                                                                currentRow
+                                                        target.addView(
+                                                                row
                                                         );
                                                     }
 
@@ -1276,27 +1601,26 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                             );
 
                                                     cardParams.setMargins(
-                                                            10,
-                                                            8,
-                                                            10,
-                                                            8
+                                                            dpToPx(6),
+                                                            dpToPx(6),
+                                                            dpToPx(6),
+                                                            dpToPx(6)
                                                     );
 
                                                     card.setLayoutParams(
                                                             cardParams
                                                     );
 
-                                                    card.setRadius(20f);
+                                                    card.setRadius(
+                                                            dpToPx(16)
+                                                    );
+
                                                     card.setCardBackgroundColor(
                                                             Color.WHITE
                                                     );
 
                                                     card.setCardElevation(
-                                                            0f
-                                                    );
-
-                                                    card.setMaxCardElevation(
-                                                            0f
+                                                            dpToPx(2)
                                                     );
 
                                                     LinearLayout inner =
@@ -1308,133 +1632,109 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                             LinearLayout.VERTICAL
                                                     );
 
-                                                    inner.setBackgroundColor(
-                                                            Color.WHITE
-                                                    );
-
-                                                    inner.setLayoutParams(
-                                                            new LinearLayout.LayoutParams(
-                                                                    LinearLayout.LayoutParams.MATCH_PARENT,
-                                                                    LinearLayout.LayoutParams.MATCH_PARENT
-                                                            )
-                                                    );
-
-                                                    ImageView img =
+                                                    ImageView imageView =
                                                             new ImageView(
                                                                     context
                                                             );
 
-                                                    LinearLayout.LayoutParams imgParams =
-                                                            new LinearLayout.LayoutParams(
-                                                                    LinearLayout.LayoutParams.MATCH_PARENT,
-                                                                    0,
-                                                                    1.0f
-                                                            );
-
-                                                    img.setLayoutParams(
-                                                            imgParams
-                                                    );
-
-                                                    img.setScaleType(
+                                                    imageView.setScaleType(
                                                             ImageView.ScaleType.CENTER_CROP
                                                     );
 
-                                                    img.setBackgroundColor(
-                                                            Color.parseColor(
-                                                                    "#F5F5F5"
+                                                    imageView.setLayoutParams(
+                                                            new LinearLayout.LayoutParams(
+                                                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                                                    dpToPx(120)
                                                             )
                                                     );
 
                                                     loadImageAsync(
-                                                            img,
-                                                            imageStr
+                                                            imageView,
+                                                            image
                                                     );
 
-                                                    inner.addView(img);
+                                                    inner.addView(
+                                                            imageView
+                                                    );
 
-                                                    TextView titleTv =
+                                                    TextView titleView =
                                                             new TextView(
                                                                     context
                                                             );
 
-                                                    titleTv.setText(
-                                                            titleStr
+                                                    titleView.setText(
+                                                            title
                                                     );
 
-                                                    titleTv.setTextColor(
+                                                    titleView.setTextColor(
                                                             Color.BLACK
                                                     );
 
-                                                    titleTv.setTextSize(
+                                                    titleView.setTextSize(
                                                             13
                                                     );
 
-                                                    titleTv.setMaxLines(
+                                                    titleView.setMaxLines(
                                                             2
                                                     );
 
-                                                    titleTv.setPadding(
-                                                            14,
-                                                            8,
-                                                            14,
+                                                    titleView.setPadding(
+                                                            dpToPx(10),
+                                                            dpToPx(6),
+                                                            dpToPx(10),
                                                             0
                                                     );
 
-                                                    if (customTypeface !=
-                                                            null) {
+                                                    if (customTypeface != null) {
 
-                                                        titleTv.setTypeface(
+                                                        titleView.setTypeface(
                                                                 customTypeface
                                                         );
                                                     }
 
                                                     inner.addView(
-                                                            titleTv
+                                                            titleView
                                                     );
 
-                                                    TextView priceTv =
+                                                    TextView priceView =
                                                             new TextView(
                                                                     context
                                                             );
 
-                                                    priceTv.setText(
-                                                            priceStr
+                                                    priceView.setText(
+                                                            price
                                                     );
 
-                                                    priceTv.setTextColor(
+                                                    priceView.setTextColor(
                                                             Color.BLACK
                                                     );
 
-                                                    priceTv.setTextSize(
+                                                    priceView.setTextSize(
                                                             14
                                                     );
 
-                                                    priceTv.setTypeface(
-                                                            null,
-                                                            Typeface.BOLD
+                                                    priceView.setPadding(
+                                                            dpToPx(10),
+                                                            dpToPx(2),
+                                                            dpToPx(10),
+                                                            dpToPx(8)
                                                     );
 
-                                                    priceTv.setPadding(
-                                                            14,
-                                                            2,
-                                                            14,
-                                                            12
-                                                    );
+                                                    if (customTypeface != null) {
 
-                                                    if (customTypeface !=
-                                                            null) {
-
-                                                        priceTv.setTypeface(
+                                                        priceView.setTypeface(
                                                                 customTypeface,
                                                                 Typeface.BOLD
                                                         );
                                                     }
 
                                                     inner.addView(
-                                                            priceTv
+                                                            priceView
                                                     );
 
-                                                    card.addView(inner);
+                                                    card.addView(
+                                                            inner
+                                                    );
 
                                                     card.setOnClickListener(
                                                             new View.OnClickListener() {
@@ -1450,35 +1750,49 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                             }
                                                     );
 
-                                                    if (currentRow !=
-                                                            null) {
+                                                    if (row != null) {
 
-                                                        currentRow.addView(
+                                                        row.addView(
                                                                 card
                                                         );
                                                     }
                                                 }
 
                                             } catch (Exception e) {
+
                                                 e.printStackTrace();
+
+                                                OnError(
+                                                        "BuildProductGrid Error: "
+                                                                + e.getMessage()
+                                                );
                                             }
                                         }
                                     }
                             );
 
                         } catch (Exception e) {
+
                             e.printStackTrace();
+
+                            OnError(
+                                    "JSON Error: "
+                                            + e.getMessage()
+                            );
                         }
                     }
                 }
         );
     }
 
-    // =========================================================================
-    // 3B. LISTE DYNAMIQUE DE CATÉGORIES
-    // =========================================================================
+    // =========================================================
+    // CATEGORIES
+    // =========================================================
 
-    @SimpleFunction(description = "Génère la liste des catégories/sous-catégories depuis un JSON.")
+    @SimpleFunction(
+            description =
+                    "Génère la liste dynamique des catégories."
+    )
     public void BuildCategoryListFromJson(
             final AndroidViewComponent listContainer,
             final String categoriesJson) {
@@ -1492,7 +1806,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                         try {
 
                             final JSONArray mainArray =
-                                    new JSONArray(categoriesJson);
+                                    new JSONArray(
+                                            categoriesJson
+                                    );
 
                             runOnUi(
                                     new Runnable() {
@@ -1507,8 +1823,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                                 listContainer
                                                         );
 
-                                                if (target == null)
+                                                if (target == null) {
                                                     return;
+                                                }
 
                                                 target.removeAllViews();
 
@@ -1526,9 +1843,11 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                                 radioButtonColor
                                                         );
 
-                                                for (int i = 0;
-                                                     i < mainArray.length();
-                                                     i++) {
+                                                for (
+                                                        int i = 0;
+                                                        i < mainArray.length();
+                                                        i++
+                                                ) {
 
                                                     JSONObject category =
                                                             mainArray
@@ -1574,19 +1893,22 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                                                     header.setPadding(
                                                             0,
-                                                            (int) dpToPx(16),
+                                                            dpToPx(16),
                                                             0,
-                                                            (int) dpToPx(8)
+                                                            dpToPx(8)
                                                     );
 
-                                                    group.addView(header);
+                                                    group.addView(
+                                                            header
+                                                    );
 
-                                                    if (subCategories !=
-                                                            null) {
+                                                    if (subCategories != null) {
 
-                                                        for (int j = 0;
-                                                             j < subCategories.length();
-                                                             j++) {
+                                                        for (
+                                                                int j = 0;
+                                                                j < subCategories.length();
+                                                                j++
+                                                        ) {
 
                                                             JSONObject sub =
                                                                     subCategories
@@ -1637,8 +1959,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                                 );
                                                             }
 
-                                                            if (customTypeface !=
-                                                                    null) {
+                                                            if (customTypeface != null) {
 
                                                                 button.setTypeface(
                                                                         customTypeface
@@ -1646,10 +1967,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                             }
 
                                                             button.setPadding(
-                                                                    (int) dpToPx(8),
-                                                                    (int) dpToPx(12),
-                                                                    (int) dpToPx(8),
-                                                                    (int) dpToPx(12)
+                                                                    dpToPx(8),
+                                                                    dpToPx(12),
+                                                                    dpToPx(8),
+                                                                    dpToPx(12)
                                                             );
 
                                                             button.setOnClickListener(
@@ -1679,7 +2000,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                             divider.setLayoutParams(
                                                                     new LinearLayout.LayoutParams(
                                                                             ViewGroup.LayoutParams.MATCH_PARENT,
-                                                                            (int) dpToPx(1)
+                                                                            dpToPx(1)
                                                                     )
                                                             );
 
@@ -1696,9 +2017,12 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                                     }
                                                 }
 
-                                                target.addView(group);
+                                                target.addView(
+                                                        group
+                                                );
 
                                             } catch (Exception e) {
+
                                                 e.printStackTrace();
                                             }
                                         }
@@ -1706,6 +2030,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                             );
 
                         } catch (Exception e) {
+
                             e.printStackTrace();
                         }
                     }
@@ -1713,652 +2038,16 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    // =========================================================================
-    // 4. EFFETS VISUELS
-    // =========================================================================
-
-    @SimpleFunction(description = "Applique un dégradé de couleur sur un composant.")
-    public void SetGradientBackground(
-            final AndroidViewComponent component,
-            final int startColor,
-            final int endColor,
-            final String orientation) {
-
-        activity.runOnUiThread(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            GradientDrawable.Orientation gradOrientation =
-                                    GradientDrawable.Orientation.TOP_BOTTOM;
-
-                            if ("LEFT_RIGHT".equalsIgnoreCase(
-                                    orientation)) {
-
-                                gradOrientation =
-                                        GradientDrawable.Orientation.LEFT_RIGHT;
-                            }
-
-                            GradientDrawable gd =
-                                    new GradientDrawable(
-                                            gradOrientation,
-                                            new int[]{
-                                                    startColor,
-                                                    endColor
-                                            }
-                                    );
-
-                            gd.setCornerRadius(0f);
-
-                            component.getView()
-                                    .setBackground(gd);
-
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-        );
-    }
-
-    @SimpleFunction(description = "Applique un effet de flou (Glassmorphism) sur un composant.")
-    public void SetBlurEffect(
-            final AndroidViewComponent component,
-            final float radius) {
-
-        activity.runOnUiThread(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            View view =
-                                    component.getView();
-
-                            if (Build.VERSION.SDK_INT >=
-                                    Build.VERSION_CODES.S) {
-
-                                float blurRadius =
-                                        Math.max(
-                                                1f,
-                                                Math.min(
-                                                        radius,
-                                                        25f
-                                                )
-                                        );
-
-                                view.setRenderEffect(
-                                        RenderEffect.createBlurEffect(
-                                                blurRadius,
-                                                blurRadius,
-                                                Shader.TileMode.CLAMP
-                                        )
-                                );
-
-                            } else {
-
-                                view.setBackgroundColor(
-                                        Color.argb(
-                                                150,
-                                                255,
-                                                255,
-                                                255
-                                        )
-                                );
-                            }
-
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-        );
-    }
-
-    // =========================================================================
-    // 5. DIALOGUE TRANSPARENT, NOTIFICATION & GESTION SONORE
-    // =========================================================================
-
-    @SimpleFunction(description = "Affiche un composant sous forme de dialogue transparent.")
-    public void ShowAlphaDialog(
-            final AndroidViewComponent dialogContentLayout,
-            final boolean cancelable) {
-
-        activity.runOnUiThread(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            if (activeAlphaDialog != null &&
-                                    activeAlphaDialog.isShowing()) {
-
-                                activeAlphaDialog.dismiss();
-                            }
-
-                            activeAlphaDialog =
-                                    new Dialog(activity);
-
-                            activeAlphaDialog.requestWindowFeature(
-                                    Window.FEATURE_NO_TITLE
-                            );
-
-                            View contentView =
-                                    dialogContentLayout.getView();
-
-                            if (contentView.getParent() != null) {
-
-                                ((ViewGroup)
-                                        contentView.getParent())
-                                        .removeView(contentView);
-                            }
-
-                            activeAlphaDialog.setContentView(
-                                    contentView
-                            );
-
-                            if (activeAlphaDialog.getWindow() !=
-                                    null) {
-
-                                activeAlphaDialog
-                                        .getWindow()
-                                        .setBackgroundDrawable(
-                                                new ColorDrawable(
-                                                        Color.TRANSPARENT
-                                                )
-                                        );
-
-                                activeAlphaDialog
-                                        .getWindow()
-                                        .setLayout(
-                                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                                ViewGroup.LayoutParams.WRAP_CONTENT
-                                        );
-                            }
-
-                            activeAlphaDialog.setCancelable(
-                                    cancelable
-                            );
-
-                            activeAlphaDialog.show();
-
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-        );
-    }
-
-    @SimpleFunction(description = "Ferme le dialogue Alpha.")
-    public void DismissAlphaDialog() {
-
-        activity.runOnUiThread(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        if (activeAlphaDialog != null &&
-                                activeAlphaDialog.isShowing()) {
-
-                            activeAlphaDialog.dismiss();
-                            activeAlphaDialog = null;
-                        }
-                    }
-                }
-        );
-    }
-
-    @SimpleFunction(description = "Notification personnalisée temporaire.")
-    public void CustomNotifier(
-            final AndroidViewComponent customLayout,
-            final int durationMs) {
-
-        activity.runOnUiThread(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        ShowAlphaDialog(
-                                customLayout,
-                                true
-                        );
-
-                        new Handler().postDelayed(
-                                new Runnable() {
-
-                                    @Override
-                                    public void run() {
-                                        DismissAlphaDialog();
-                                    }
-                                },
-                                durationMs
-                        );
-                    }
-                }
-        );
-    }
-
-    @SimpleFunction(description = "Joue un son personnalisé (ex: envoi de message, notification).")
-    public void PlayCustomSound(
-            final String fileNameOrPath) {
-
-        AsynchUtil.runAsynchronously(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        MediaPlayer mediaPlayer = null;
-
-                        try {
-
-                            mediaPlayer =
-                                    new MediaPlayer();
-
-                            mediaPlayer.setAudioAttributes(
-                                    new AudioAttributes.Builder()
-                                            .setContentType(
-                                                    AudioAttributes.CONTENT_TYPE_SONIFICATION
-                                            )
-                                            .setUsage(
-                                                    AudioAttributes.USAGE_ASSISTANCE_SONIFICATION
-                                            )
-                                            .build()
-                            );
-
-                            if (fileNameOrPath.startsWith("/")) {
-
-                                mediaPlayer.setDataSource(
-                                        fileNameOrPath
-                                );
-
-                            } else {
-
-                                android.content.res.AssetFileDescriptor afd =
-                                        context
-                                                .getAssets()
-                                                .openFd(
-                                                        fileNameOrPath
-                                                );
-
-                                mediaPlayer.setDataSource(
-                                        afd.getFileDescriptor(),
-                                        afd.getStartOffset(),
-                                        afd.getLength()
-                                );
-
-                                afd.close();
-                            }
-
-                            mediaPlayer.prepare();
-
-                            mediaPlayer.setOnCompletionListener(
-                                    new MediaPlayer.OnCompletionListener() {
-
-                                        @Override
-                                        public void onCompletion(
-                                                MediaPlayer mp) {
-
-                                            mp.release();
-                                        }
-                                    }
-                            );
-
-                            mediaPlayer.start();
-
-                        } catch (Exception e) {
-
-                            e.printStackTrace();
-
-                            if (mediaPlayer != null) {
-                                mediaPlayer.release();
-                            }
-                        }
-                    }
-                }
-        );
-    }
-
-    // =========================================================================
-    // 6. GALERIE D'IMAGES & COMPRESSION
-    // =========================================================================
-
-    @SimpleFunction(description = "Ouvre la galerie d'images native.")
-    public void OpenPhotoPicker() {
-
-        activity.runOnUiThread(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            Intent intent =
-                                    new Intent(
-                                            Intent.ACTION_PICK
-                                    );
-
-                            intent.setType("image/*");
-
-                            activity.startActivityForResult(
-                                    intent,
-                                    PICK_IMAGE_REQUEST
-                            );
-
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-        );
-    }
-
-    @Override
-    public void resultReturned(
-            int requestCode,
-            int resultCode,
-            Intent data) {
-
-        if (requestCode ==
-                PICK_IMAGE_REQUEST &&
-                resultCode ==
-                        Activity.RESULT_OK &&
-                data != null) {
-
-            Uri selectedImageUri =
-                    data.getData();
-
-            if (selectedImageUri != null) {
-
-                OnPhotoPicked(
-                        selectedImageUri.toString()
-                );
-            }
-        }
-    }
-
-    @SimpleFunction(description = "Compresse une image sans surcharger la mémoire.")
-    public String CompressImage(
-            String imagePath,
-            int quality,
-            int maxWidth) {
-
-        try {
-
-            BitmapFactory.Options options =
-                    new BitmapFactory.Options();
-
-            options.inJustDecodeBounds = true;
-
-            BitmapFactory.decodeFile(
-                    imagePath,
-                    options
-            );
-
-            if (options.outWidth <= 0 ||
-                    options.outHeight <= 0) {
-
-                return imagePath;
-            }
-
-            int srcWidth =
-                    options.outWidth;
-
-            int inSampleSize = 1;
-
-            if (srcWidth > maxWidth) {
-
-                inSampleSize =
-                        Math.round(
-                                (float) srcWidth /
-                                        (float) maxWidth
-                        );
-            }
-
-            options.inJustDecodeBounds =
-                    false;
-
-            options.inSampleSize =
-                    inSampleSize;
-
-            Bitmap bitmap =
-                    BitmapFactory.decodeFile(
-                            imagePath,
-                            options
-                    );
-
-            if (bitmap == null) {
-                return imagePath;
-            }
-
-            File outputFile =
-                    new File(
-                            context.getCacheDir(),
-                            "comp_"
-                                    + System.currentTimeMillis()
-                                    + ".jpg"
-                    );
-
-            FileOutputStream out = null;
-
-            try {
-
-                out =
-                        new FileOutputStream(
-                                outputFile
-                        );
-
-                bitmap.compress(
-                        Bitmap.CompressFormat.JPEG,
-                        quality,
-                        out
-                );
-
-                out.flush();
-
-            } finally {
-
-                if (out != null) {
-                    out.close();
-                }
-
-                bitmap.recycle();
-            }
-
-            return outputFile.getAbsolutePath();
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
-            return imagePath;
-        }
-    }
-
-    // =========================================================================
-    // 7. REQUÊTES SERVEUR
-    // =========================================================================
-
-    @SimpleFunction(description = "Envoie une requête HTTPS au serveur.")
-    public void CallServerRequest(
-            final String endpointUrl,
-            final String method,
-            final String headersJson,
-            final String bodyJson) {
-
-        AsynchUtil.runAsynchronously(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        HttpURLConnection conn = null;
-
-                        try {
-
-                            URL url =
-                                    new URL(endpointUrl);
-
-                            conn =
-                                    (HttpURLConnection)
-                                            url.openConnection();
-
-                            conn.setConnectTimeout(15000);
-                            conn.setReadTimeout(15000);
-
-                            conn.setRequestMethod(
-                                    "POST".equalsIgnoreCase(method)
-                                            ? "POST"
-                                            : "GET"
-                            );
-
-                            if (headersJson != null &&
-                                    !headersJson.isEmpty()) {
-
-                                JSONObject headers =
-                                        new JSONObject(
-                                                headersJson
-                                        );
-
-                                Iterator<String> keys =
-                                        headers.keys();
-
-                                while (keys.hasNext()) {
-
-                                    String key =
-                                            keys.next();
-
-                                    conn.setRequestProperty(
-                                            key,
-                                            headers.getString(key)
-                                    );
-                                }
-                            }
-
-                            if ("POST".equalsIgnoreCase(method)) {
-
-                                conn.setDoOutput(true);
-
-                                conn.setRequestProperty(
-                                        "Content-Type",
-                                        "application/json; charset=utf-8"
-                                );
-
-                                if (bodyJson != null) {
-
-                                    OutputStream os =
-                                            conn.getOutputStream();
-
-                                    os.write(
-                                            bodyJson.getBytes(
-                                                    "UTF-8"
-                                            )
-                                    );
-
-                                    os.flush();
-                                    os.close();
-                                }
-                            }
-
-                            final int responseCode =
-                                    conn.getResponseCode();
-
-                            InputStream is =
-                                    (responseCode >= 200 &&
-                                            responseCode < 400)
-                                            ? conn.getInputStream()
-                                            : conn.getErrorStream();
-
-                            final String responseContent =
-                                    lireFlux(is);
-
-                            activity.runOnUiThread(
-                                    new Runnable() {
-
-                                        @Override
-                                        public void run() {
-
-                                            OnServerResponse(
-                                                    responseCode,
-                                                    responseContent
-                                            );
-                                        }
-                                    }
-                            );
-
-                        } catch (final Exception e) {
-
-                            activity.runOnUiThread(
-                                    new Runnable() {
-
-                                        @Override
-                                        public void run() {
-
-                                            OnServerResponse(
-                                                    500,
-                                                    e.getMessage()
-                                            );
-                                        }
-                                    }
-                            );
-
-                        } finally {
-
-                            if (conn != null) {
-                                conn.disconnect();
-                            }
-                        }
-                    }
-                }
-        );
-    }
-
-    private String lireFlux(
-            InputStream is) throws IOException {
-
-        if (is == null) return "";
-
-        BufferedReader reader =
-                new BufferedReader(
-                        new InputStreamReader(
-                                is,
-                                "UTF-8"
-                        )
-                );
-
-        StringBuilder sb =
-                new StringBuilder();
-
-        String ligne;
-
-        while ((ligne =
-                reader.readLine()) != null) {
-
-            sb.append(ligne);
-        }
-
-        reader.close();
-
-        return sb.toString();
-    }
-
-    // =========================================================================
-    // 8. ÉVÉNEMENTS KODULAR
-    // =========================================================================
-
-    @SimpleEvent(description = "Déclenché quand l'utilisateur touche une icône de la barre de navigation.")
+    // =========================================================
+    // EVENTS
+    // =========================================================
+
+    @SimpleEvent(
+            description =
+                    "Déclenché lors de la sélection d'un onglet."
+    )
     public void OnSelected(String id) {
+
         EventDispatcher.dispatchEvent(
                 this,
                 "OnSelected",
@@ -2366,16 +2055,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    @SimpleEvent(description = "Déclenché en cas de problème avec la barre de navigation.")
-    public void NavBarError(String message) {
-        EventDispatcher.dispatchEvent(
-                this,
-                "NavBarError",
-                message
-        );
-    }
-
-    @SimpleEvent(description = "Déclenché lors du clic sur une carte produit.")
+    @SimpleEvent(
+            description =
+                    "Déclenché lorsqu'une carte produit est sélectionnée."
+    )
     public void OnProductCardClick(
             String productUid) {
 
@@ -2386,7 +2069,24 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    @SimpleEvent(description = "Déclenché lors du choix d'une catégorie. Renvoie l'ID et le Nom.")
+    @SimpleEvent(
+            description =
+                    "Déclenché lors du clic sur l'avatar."
+    )
+    public void OnAvatarClick(
+            boolean isMe) {
+
+        EventDispatcher.dispatchEvent(
+                this,
+                "OnAvatarClick",
+                isMe
+        );
+    }
+
+    @SimpleEvent(
+            description =
+                    "Déclenché lorsqu'une catégorie est sélectionnée."
+    )
     public void OnCategorySelected(
             String categoryId,
             String categoryTitle) {
@@ -2399,38 +2099,49 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    @SimpleEvent(description = "Déclenché lors du clic sur l'avatar du message.")
-    public void OnAvatarClick(
-            boolean isMe) {
+    @SimpleEvent(
+            description =
+                    "Erreur de l'extension."
+    )
+    public void OnError(
+            String message) {
 
         EventDispatcher.dispatchEvent(
                 this,
-                "OnAvatarClick",
-                isMe
+                "OnError",
+                message
         );
     }
 
-    @SimpleEvent(description = "Déclenché après sélection d'une image.")
-    public void OnPhotoPicked(
-            String imageUri) {
+    // =========================================================
+    // ACTIVITY RESULT
+    // =========================================================
 
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnPhotoPicked",
-                imageUri
-        );
+    @Override
+    public void resultReturned(
+            int receivedRequestCode,
+            int resultCode,
+            Intent data) {
     }
 
-    @SimpleEvent(description = "Déclenché après réponse du serveur.")
-    public void OnServerResponse(
-            int responseCode,
-            String responseContent) {
+    // =========================================================
+    // DRAWABLE HELPER
+    // =========================================================
 
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnServerResponse",
-                responseCode,
-                responseContent
-        );
+    private static class DrawableCompatHelper {
+
+        static void setIcon(
+                ImageView image,
+                Form form,
+                String path)
+                throws Exception {
+
+            image.setImageDrawable(
+                    MediaUtil.getBitmapDrawable(
+                            form,
+                            path
+                    )
+            );
+        }
     }
-                }
+                            }
