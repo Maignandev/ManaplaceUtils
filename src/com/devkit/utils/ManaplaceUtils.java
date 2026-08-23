@@ -1,9 +1,9 @@
-package com.devkit.utils;
+Package com.devkit.utils;
 
+Import android.animation.ValueAnimator;
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -15,6 +15,7 @@ import android.graphics.Rect;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
@@ -22,12 +23,17 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
-import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.view.Window;
+import android.view.animation.DecelerateInterpolator;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -36,2112 +42,1297 @@ import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import androidx.cardview.widget.CardView;
+Import androidx.cardview.widget.CardView;
 
-import com.google.appinventor.components.annotations.*;
+Import com.google.appinventor.components.annotations.*;
 import com.google.appinventor.components.common.ComponentCategory;
 import com.google.appinventor.components.runtime.*;
 import com.google.appinventor.components.runtime.util.AsynchUtil;
 import com.google.appinventor.components.runtime.util.MediaUtil;
 
-import org.json.JSONArray;
+Import org.json.JSONArray;
 import org.json.JSONObject;
 
+Import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 @DesignerComponent(
-        version = 8,
-        description = "Extension ManaplaceUtils mise à jour pour Kodular.",
-        category = ComponentCategory.EXTENSION,
-        nonVisible = true
+        Version = 10,
+        Description = "Extension ManaplaceUtils mise à jour pour Kodular.",
+        Category = ComponentCategory.EXTENSION,
+        NonVisible = true
 )
 @SimpleObject(external = true)
 @UsesPermissions(
-        permissionNames =
+        PermissionNames =
                 "android.permission.READ_EXTERNAL_STORAGE," +
                 "android.permission.READ_MEDIA_IMAGES," +
                 "android.permission.INTERNET"
 )
-public class ManaplaceUtils extends AndroidNonvisibleComponent
-        implements ActivityResultListener {
+public class ManaplaceUtils extends AndroidNonvisibleComponent implements ActivityResultListener {
 
-    private final Context context;
-    private final Activity activity;
-    private final Form form;
-    private final int requestCode;
+    Private final Context context;
+    Private final Activity activity;
+    Private final Form monForm;
+    Private Dialog activeAlphaDialog;
+    Private final int PICK_IMAGE_REQUEST = 1001;
 
-    private Typeface customTypeface = Typeface.DEFAULT;
-    private int radioButtonColor = Color.parseColor("#C01A1A1B");
-    private AlertDialog currentAlphaDialog = null;
+    Private Typeface customTypeface = Typeface.DEFAULT;
+    Private int radioButtonColor = Color.parseColor("#C01A1A1B");
 
-    // =========================================================
-    // NAVIGATION
-    // =========================================================
+    // =========================================================================
+    // 0. BARRE DE NAVIGATION FLOTTANTE
+    // =========================================================================
 
-    private boolean navBarInitialized = false;
+    Private boolean dejaInitialise = false;
+    Private int tailleIconeDp = 26;
+    Private final List<String> idsEnAttente = new ArrayList<>();
+    Private final List<String> iconesEnAttente = new ArrayList<>();
+    Private final List<ImageView> vuesIcones = new ArrayList<>();
+    Private final List<View> vuesCercles = new ArrayList<>();
+    Private final List<String> idsFinaux = new ArrayList<>();
+    Private String idSelectionne = null;
 
-    private int navIconSizeDp = 26;
-
-    private final List<String> navIds = new ArrayList<String>();
-    private final List<String> navIcons = new ArrayList<String>();
-
-    private final List<ImageView> navImages =
-            new ArrayList<ImageView>();
-
-    private final List<View> navCircles =
-            new ArrayList<View>();
-
-    private String selectedNavId = null;
-
-    private FrameLayout navBarRoot = null;
-    private LinearLayout navBarView = null;
-
-    // =========================================================
-    // CONSTRUCTOR
-    // =========================================================
-
-    public ManaplaceUtils(ComponentContainer container) {
-        super(container.$form());
-
-        this.context = container.$context();
-        this.activity = (Activity) container.$context();
-        this.form = container.$form();
-
-        this.requestCode =
-                form.registerForActivityResult(this);
+    Public ManaplaceUtils(ComponentContainer container) {
+        Super(container.$form());
+        This.context = container.$context();
+        This.activity = (Activity) container.$context();
+        This.monForm = container.$form();
+        This.form.registerForActivityResult(this);
     }
 
-    // =========================================================
-    // UTILITAIRES
-    // =========================================================
-
-    private int dpToPx(int dp) {
-        return (int) TypedValue.applyDimension(
+    Private float dpToPx(int dp) {
+        Return TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP,
-                dp,
-                context.getResources().getDisplayMetrics()
+                Dp,
+                Context.getResources().getDisplayMetrics()
         );
     }
 
-    private ViewGroup getRealLayout(
-            AndroidViewComponent component) {
-
-        if (component == null) {
-            return null;
+    @SimpleFunction(description = "Ajoute une icône à la barre de navigation. À appeler une fois par icône, avant NavBarInitialize.")
+    Public void NavBarAdd(String id, String icon) {
+        If (idsEnAttente.contains(id)) {
+            NavBarError("Id déjà utilisé: " + id);
+            Return;
         }
 
+        IdsEnAttente.add(id);
+        IconesEnAttente.add(icon);
+    }
+
+    @SimpleFunction(description = "Construit et affiche la barre flottante avec toutes les icônes ajoutées via NavBarAdd.")
+    Public void NavBarInitialize(final int margeBas, final double largeurPourcent, final double hauteurPourcent) {
+        If (dejaInitialise) return;
+
+        If (idsEnAttente.isEmpty()) {
+            NavBarError("Aucune icône ajoutée — appelle NavBarAdd avant NavBarInitialize");
+            Return;
+        }
+
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    Final FrameLayout root = (FrameLayout) activity.findViewById(android.R.id.content);
+
+                    If (root == null) {
+                        NavBarError("Écran racine introuvable");
+                        Return;
+                    }
+
+                    // Attendre l'initialisation complète du layout (compatible Screen.Initialize)
+                    Root.post(new Runnable() {
+                        @Override
+                        Public void run() {
+                            Try {
+                                DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
+
+                                Int largeurFinale = (largeurPourcent > 0)
+                                        ? (int) (metrics.widthPixels * (largeurPourcent / 100.0))
+                                        : ViewGroup.LayoutParams.WRAP_CONTENT;
+
+                                Int hauteurFinale = (hauteurPourcent > 0)
+                                        ? (int) (metrics.heightPixels * (hauteurPourcent / 100.0))
+                                        : (int) dpToPx(64);
+
+                                LinearLayout bar = new LinearLayout(activity);
+                                Bar.setOrientation(LinearLayout.HORIZONTAL);
+                                Bar.setGravity(Gravity.CENTER);
+                                Bar.setWeightSum(idsEnAttente.size());
+
+                                GradientDrawable fond = new GradientDrawable();
+                                Fond.setColor(Color.WHITE);
+                                Fond.setCornerRadius(dpToPx(30));
+                                Bar.setBackground(fond);
+
+                                // Élévation supprimée selon la demande
+
+                                For (int i = 0; i < idsEnAttente.size(); i++) {
+                                    Final String tabId = idsEnAttente.get(i);
+                                    String iconFile = iconesEnAttente.get(i);
+
+                                    FrameLayout conteneur = new FrameLayout(activity);
+                                    LinearLayout.LayoutParams pConteneur = new LinearLayout.LayoutParams(
+                                            0,
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            1f
+                                    );
+                                    Conteneur.setLayoutParams(pConteneur);
+
+                                    View cercle = new View(activity);
+                                    GradientDrawable fondCercle = new GradientDrawable();
+                                    FondCercle.setShape(GradientDrawable.OVAL);
+                                    FondCercle.setColor(Color.argb(30, 0, 0, 0));
+                                    Cercle.setBackground(fondCercle);
+                                    Cercle.setAlpha(0f);
+
+                                    FrameLayout.LayoutParams pCercle = new FrameLayout.LayoutParams(
+                                            (int) dpToPx(46),
+                                            (int) dpToPx(46),
+                                            Gravity.CENTER
+                                    );
+                                    Conteneur.addView(cercle, pCercle);
+
+                                    ImageView img = new ImageView(activity);
+                                    Img.setAdjustViewBounds(true);
+
+                                    Try {
+                                        Drawable d = MediaUtil.getBitmapDrawable(monForm, iconFile);
+                                        Img.setImageDrawable(d);
+                                        Img.setColorFilter(
+                                                New PorterDuffColorFilter(
+                                                        Color.rgb(150, 150, 150),
+                                                        PorterDuff.Mode.SRC_IN
+                                                )
+                                        );
+                                    } catch (IOException e) {
+                                        NavBarError("Icône introuvable: " + iconFile);
+                                    }
+
+                                    Int taillePx = (int) dpToPx(tailleIconeDp);
+                                    FrameLayout.LayoutParams pImg = new FrameLayout.LayoutParams(
+                                            TaillePx,
+                                            TaillePx,
+                                            Gravity.CENTER
+                                    );
+                                    Conteneur.addView(img, pImg);
+
+                                    Final View cercleFinal = cercle;
+                                    Final ImageView imgFinal = img;
+
+                                    Conteneur.setOnClickListener(new View.OnClickListener() {
+                                        @Override
+                                        Public void onClick(View v) {
+                                            SelectionnerOnglet(tabId, cercleFinal, imgFinal);
+                                        }
+                                    });
+
+                                    VuesIcones.add(img);
+                                    VuesCercles.add(cercle);
+                                    IdsFinaux.add(tabId);
+
+                                    Bar.addView(conteneur);
+                                }
+
+                                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                                        LargeurFinale,
+                                        HauteurFinale
+                                );
+                                Params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+                                Params.setMargins(0, 0, 0, (int) dpToPx(margeBas));
+
+                                Root.addView(bar, params);
+                                DejaInitialise = true;
+
+                            } catch (Exception e) {
+                                NavBarError("Erreur initialisation bar: " + e.getMessage());
+                            }
+                        }
+                    });
+
+                } catch (Exception e) {
+                    NavBarError("Erreur inattendue: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Ajuste la taille de toutes les icônes de la barre en dp, avec une transition animée.")
+    Public void NavBarSetIconSize(final int tailleDp) {
+        Final int ancienneTailleDp = tailleIconeDp;
+        TailleIconeDp = tailleDp;
+
+        If (vuesIcones.isEmpty()) return;
+
+        Try {
+            Final float ancienPx = dpToPx(ancienneTailleDp);
+            Final float nouveauPx = dpToPx(tailleDp);
+
+            ValueAnimator anim = ValueAnimator.ofFloat(ancienPx, nouveauPx);
+            Anim.setDuration(220);
+            Anim.setInterpolator(new DecelerateInterpolator());
+
+            Anim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                Public void onAnimationUpdate(ValueAnimator animation) {
+                    Int taillePx = (int) (float) animation.getAnimatedValue();
+                    For (ImageView iv : vuesIcones) {
+                        ViewGroup.LayoutParams p = iv.getLayoutParams();
+                        P.width = taillePx;
+                        P.height = taillePx;
+                        Iv.setLayoutParams(p);
+                    }
+                }
+            });
+
+            Anim.start();
+        } catch (Exception e) {
+            NavBarError("Erreur NavBarSetIconSize: " + e.getMessage());
+        }
+    }
+
+    @SimpleFunction(description = "Sélectionne un onglet de la barre par code, sans clic.")
+    Public void NavBarSelect(String id) {
+        Int index = idsFinaux.indexOf(id);
+
+        If (index < 0) {
+            NavBarError("Id introuvable pour NavBarSelect: " + id);
+            Return;
+        }
+
+        SelectionnerOnglet(id, vuesCercles.get(index), vuesIcones.get(index));
+    }
+
+    Private void SelectionnerOnglet(String id, View cercle, ImageView img) {
+        Try {
+            If (id.equals(idSelectionne)) return;
+
+            If (idSelectionne != null) {
+                Int ancienIndex = idsFinaux.indexOf(idSelectionne);
+                If (ancienIndex >= 0) {
+                    AnimerOnglet(vuesCercles.get(ancienIndex), vuesIcones.get(ancienIndex), false);
+                }
+            }
+
+            AnimerOnglet(cercle, img, true);
+            IdSelectionne = id;
+            OnSelected(id);
+
+        } catch (Exception e) {
+            NavBarError("Erreur de sélection: " + e.getMessage());
+        }
+    }
+
+    Private void animerOnglet(final View cercle, final ImageView img, boolean selectionne) {
+        Float alphaCible = selectionne ? 1f : 0f;
+
+        ValueAnimator anim = ValueAnimator.ofFloat(cercle.getAlpha(), alphaCible);
+        Anim.setDuration(220);
+        Anim.setInterpolator(new DecelerateInterpolator());
+
+        Anim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            Public void onAnimationUpdate(ValueAnimator animation) {
+                Float val = (float) animation.getAnimatedValue();
+                Cercle.setAlpha(val);
+
+                Int couleur = melangerCouleurs(
+                        Color.rgb(150, 150, 150),
+                        Color.rgb(20, 20, 20),
+                        Val
+                );
+
+                Img.setColorFilter(new PorterDuffColorFilter(couleur, PorterDuff.Mode.SRC_IN));
+            }
+        });
+
+        Anim.start();
+    }
+
+    Private int melangerCouleurs(int c1, int c2, float ratio) {
+        Int r = (int) (Color.red(c1) + ratio * (Color.red(c2) - Color.red(c1)));
+        Int g = (int) (Color.green(c1) + ratio * (Color.green(c2) - Color.green(c1)));
+        Int b = (int) (Color.blue(c1) + ratio * (Color.blue(c2) - Color.blue(c1)));
+        Return Color.rgb(r, g, b);
+    }
+
+    // =========================================================================
+    // POLICE PERSONNALISÉE
+    // =========================================================================
+
+    @SimpleFunction(description = "Charge une police personnalisée .ttf ou .otf.")
+    Public void LoadCustomFont(String fontPath) {
+        Try {
+            If (fontPath == null || fontPath.trim().isEmpty()) {
+                CustomTypeface = Typeface.DEFAULT;
+                Return;
+            }
+
+            If (fontPath.startsWith("/")) {
+                CustomTypeface = Typeface.createFromFile(new File(fontPath));
+            } else {
+                CustomTypeface = Typeface.createFromAsset(context.getAssets(), fontPath);
+            }
+        } catch (Exception e) {
+            E.printStackTrace();
+            CustomTypeface = Typeface.DEFAULT;
+        }
+    }
+
+    @SimpleFunction(description = "Définit la couleur des boutons radio.")
+    Public void SetRadioButtonColor(int color) {
+        RadioButtonColor = color;
+    }
+
+    // =========================================================================
+    // UTILITAIRES IMAGES
+    // =========================================================================
+
+    Private ViewGroup getRealLayout(AndroidViewComponent component) {
+        If (component == null) return null;
         View view = component.getView();
 
-        if (!(view instanceof ViewGroup)) {
-            return null;
+        If (view instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) view;
+            If (vg.getChildCount() > 0 && vg.getChildAt(0) instanceof ViewGroup) {
+                Return (ViewGroup) vg.getChildAt(0);
+            }
+            Return vg;
         }
-
-        return (ViewGroup) view;
+        Return null;
     }
 
-    private void runOnUi(Runnable runnable) {
-        activity.runOnUiThread(runnable);
+    Private void runOnUi(Runnable runnable) {
+        Activity.runOnUiThread(runnable);
     }
 
-    // =========================================================
-    // CHARGEMENT IMAGE ASYNCHRONE
-    // =========================================================
-
-    private void loadImageAsync(
-            final ImageView imageView,
-            final String imagePath) {
-
-        if (imagePath == null ||
-                imagePath.trim().isEmpty()) {
-            return;
-        }
+    Private void loadImageAsync(final ImageView imageView, final String imagePath) {
+        If (imagePath == null || imagePath.trim().isEmpty()) return;
 
         AsynchUtil.runAsynchronously(new Runnable() {
             @Override
-            public void run() {
-
+            Public void run() {
                 Bitmap bmp = null;
                 InputStream input = null;
                 HttpURLConnection conn = null;
 
-                try {
-
-                    if (imagePath.startsWith("http://") ||
-                            imagePath.startsWith("https://")) {
-
+                Try {
+                    If (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
                         URL url = new URL(imagePath);
-
-                        conn = (HttpURLConnection)
-                                url.openConnection();
-
-                        conn.setConnectTimeout(15000);
-                        conn.setReadTimeout(15000);
-                        conn.setDoInput(true);
-                        conn.connect();
-
-                        input = conn.getInputStream();
-
-                        bmp = BitmapFactory.decodeStream(input);
+                        Conn = (HttpURLConnection) url.openConnection();
+                        Conn.setConnectTimeout(15000);
+                        Conn.setReadTimeout(15000);
+                        Conn.setDoInput(true);
+                        Conn.connect();
+                        Input = conn.getInputStream();
+                        Bmp = BitmapFactory.decodeStream(input);
 
                     } else if (imagePath.startsWith("content://")) {
-
-                        input = context
-                                .getContentResolver()
-                                .openInputStream(
-                                        Uri.parse(imagePath)
-                                );
-
-                        if (input != null) {
-                            bmp = BitmapFactory.decodeStream(input);
+                        Input = context.getContentResolver().openInputStream(Uri.parse(imagePath));
+                        If (input != null) {
+                            Bmp = BitmapFactory.decodeStream(input);
                         }
 
                     } else {
-
-                        try {
-
-                            input = context
-                                    .getAssets()
-                                    .open(imagePath);
-
-                            bmp = BitmapFactory.decodeStream(input);
-
+                        Try {
+                            Input = context.getAssets().open(imagePath);
+                            Bmp = BitmapFactory.decodeStream(input);
                         } catch (Exception assetError) {
-
-                            try {
-
-                                bmp = MediaUtil
-                                        .getBitmapDrawable(
-                                                form,
-                                                imagePath
-                                        )
-                                        .getBitmap();
-
+                            Try {
+                                Bmp = MediaUtil.getBitmapDrawable(monForm, imagePath).getBitmap();
                             } catch (Exception mediaError) {
-
-                                File file =
-                                        new File(imagePath);
-
-                                if (file.exists()) {
-
-                                    input =
-                                            new FileInputStream(file);
-
-                                    bmp =
-                                            BitmapFactory
-                                                    .decodeStream(input);
+                                File file = new File(imagePath);
+                                If (file.exists()) {
+                                    Input = new FileInputStream(file);
+                                    Bmp = BitmapFactory.decodeStream(input);
                                 }
                             }
                         }
                     }
-
                 } catch (Exception e) {
-
-                    e.printStackTrace();
-
+                    E.printStackTrace();
                 } finally {
-
-                    if (input != null) {
-
-                        try {
-                            input.close();
-                        } catch (Exception ignored) {
-                        }
+                    If (input != null) {
+                        Try { input.close(); } catch (Exception ignored) {}
                     }
-
-                    if (conn != null) {
-                        conn.disconnect();
+                    If (conn != null) {
+                        Conn.disconnect();
                     }
                 }
 
-                final Bitmap finalBmp = bmp;
-
-                if (finalBmp != null) {
-
-                    activity.runOnUiThread(
-                            new Runnable() {
-                                @Override
-                                public void run() {
-
-                                    if (imageView != null &&
-                                            imageView.getWindowToken()
-                                                    != null) {
-
-                                        imageView
-                                                .setImageBitmap(
-                                                        finalBmp
-                                                );
-                                    }
-                                }
+                Final Bitmap finalBmp = bmp;
+                If (finalBmp != null) {
+                    Activity.runOnUiThread(new Runnable() {
+                        @Override
+                        Public void run() {
+                            If (imageView.getWindowToken() != null || imageView.isAttachedToWindow()) {
+                                ImageView.setImageBitmap(finalBmp);
                             }
-                    );
+                        }
+                    });
                 }
             }
         });
     }
 
-    // =========================================================
-    // CUSTOM FONT
-    // =========================================================
+    // =========================================================================
+    // 1. MOTEUR DE CHAT DYNAMIQUE NATIVE
+    // =========================================================================
 
-    @SimpleFunction(
-            description =
-                    "Charge une police personnalisée .ttf ou .otf."
-    )
-    public void LoadCustomFont(String fontPath) {
+    @SimpleFunction(description = "Ajoute une bulle de chat avec un petit avatar rond.")
+    Public void AddChatBubble(
+            Final AndroidViewComponent chatContainer,
+            Final String messageText,
+            Final String timeText,
+            Final String avatarUrl,
+            Final boolean isMe,
+            Final int bubbleColor,
+            Final int textColor) {
 
-        try {
+        RunOnUi(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    ViewGroup targetLayout = getRealLayout(chatContainer);
+                    If (targetLayout == null) return;
 
-            if (fontPath == null ||
-                    fontPath.trim().isEmpty()) {
+                    Int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
 
-                customTypeface = Typeface.DEFAULT;
-                return;
-            }
+                    LinearLayout row = new LinearLayout(context);
+                    Row.setOrientation(LinearLayout.HORIZONTAL);
+                    Row.setGravity(isMe ? Gravity.END : Gravity.START);
 
-            if (fontPath.startsWith("/")) {
+                    LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                    );
+                    RowParams.setMargins((int) dpToPx(8), (int) dpToPx(4), (int) dpToPx(8), (int) dpToPx(4));
+                    Row.setLayoutParams(rowParams);
 
-                customTypeface =
-                        Typeface.createFromFile(
-                                new File(fontPath)
+                    Int avatarSizePx = (int) dpToPx(32);
+                    CardView avatarCard = new CardView(context);
+                    LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(avatarSizePx, avatarSizePx);
+                    AvatarParams.gravity = Gravity.CENTER_VERTICAL;
+                    AvatarParams.setMargins((int) dpToPx(6), 0, (int) dpToPx(6), 0);
+                    AvatarCard.setLayoutParams(avatarParams);
+                    AvatarCard.setRadius(avatarSizePx / 2f);
+                    AvatarCard.setCardElevation(0f);
+                    AvatarCard.setMaxCardElevation(0f);
+                    AvatarCard.setCardBackgroundColor(Color.parseColor("#E0E0E0"));
+
+                    ImageView avatarImg = new ImageView(context);
+                    AvatarImg.setLayoutParams(new ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                    ));
+                    AvatarImg.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                    AvatarImg.setPadding((int) dpToPx(4), (int) dpToPx(4), (int) dpToPx(4), (int) dpToPx(4));
+
+                    If (avatarUrl != null && !avatarUrl.isEmpty()) {
+                        LoadImageAsync(avatarImg, avatarUrl);
+                    }
+
+                    AvatarCard.addView(avatarImg);
+                    AvatarCard.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        Public void onClick(View v) {
+                            OnAvatarClick(isMe);
+                        }
+                    });
+
+                    LinearLayout bubble = new LinearLayout(context);
+                    Bubble.setOrientation(LinearLayout.VERTICAL);
+                    Bubble.setPadding((int) dpToPx(16), (int) dpToPx(10), (int) dpToPx(16), (int) dpToPx(10));
+
+                    GradientDrawable bg = new GradientDrawable();
+                    Bg.setShape(GradientDrawable.RECTANGLE);
+                    Bg.setColor(bubbleColor);
+                    Bg.setCornerRadius(dpToPx(22));
+                    Bubble.setBackground(bg);
+
+                    Int maxBubbleWidth = (int) (screenWidth * 0.72);
+                    LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                    );
+                    Bubble.setLayoutParams(bubbleParams);
+
+                    TextView msgTv = new TextView(context);
+                    MsgTv.setText(messageText);
+                    MsgTv.setTextColor(textColor);
+                    MsgTv.setTextSize(15);
+                    MsgTv.setMaxWidth(maxBubbleWidth);
+                    MsgTv.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                    ));
+
+                    If (customTypeface != null) {
+                        MsgTv.setTypeface(customTypeface);
+                    }
+
+                    Bubble.addView(msgTv);
+
+                    If (timeText != null && !timeText.isEmpty()) {
+                        TextView timeTv = new TextView(context);
+                        TimeTv.setText(timeText);
+                        TimeTv.setTextColor(Color.argb(
+                                180,
+                                Color.red(textColor),
+                                Color.green(textColor),
+                                Color.blue(textColor)
+                        ));
+                        TimeTv.setTextSize(10);
+
+                        LinearLayout.LayoutParams timeParams = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
                         );
+                        TimeParams.gravity = Gravity.END;
+                        TimeParams.setMargins(0, (int) dpToPx(2), 0, 0);
+                        TimeTv.setLayoutParams(timeParams);
 
-            } else {
+                        If (customTypeface != null) {
+                            TimeTv.setTypeface(customTypeface);
+                        }
 
-                customTypeface =
-                        Typeface.createFromAsset(
-                                context.getAssets(),
-                                fontPath
-                        );
+                        Bubble.addView(timeTv);
+                    }
+
+                    If (isMe) {
+                        Row.addView(bubble);
+                        Row.addView(avatarCard);
+                    } else {
+                        Row.addView(avatarCard);
+                        Row.addView(bubble);
+                    }
+
+                    TargetLayout.addView(row);
+                    ScrollToBottom(chatContainer);
+
+                } catch (Exception e) {
+                    E.printStackTrace();
+                }
             }
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
-            customTypeface = Typeface.DEFAULT;
-        }
+        });
     }
 
-    // =========================================================
-    // RADIO BUTTON
-    // =========================================================
-
-    @SimpleFunction(
-            description =
-                    "Définit la couleur des boutons radio."
-    )
-    public void SetRadioButtonColor(int color) {
-
-        radioButtonColor = color;
+    @SimpleFunction(description = "Fait défiler le ScrollArrangement jusqu'au tout dernier message.")
+    Public void ScrollToBottom(final AndroidViewComponent scrollContainer) {
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                View view = scrollContainer.getView();
+                If (view instanceof ScrollView) {
+                    Final ScrollView scrollView = (ScrollView) view;
+                    ScrollView.post(new Runnable() {
+                        @Override
+                        Public void run() {
+                            ScrollView.fullScroll(View.FOCUS_DOWN);
+                        }
+                    });
+                }
+            }
+        });
     }
 
-    // =========================================================
-    // NAVBAR ADD
-    // =========================================================
+    // =========================================================================
+    // 2. SAISIE FLOTTANTE & CLAVIER (CORRIGÉ & DYNAMIQUE)
+    // =========================================================================
 
-    @SimpleFunction(
-            description =
-                    "Ajoute une icône à la barre de navigation."
-    )
-    public void NavBarAdd(
-            AndroidViewComponent container,
-            String title,
-            String iconName) {
+    @SimpleFunction(description = "Attache le conteneur de saisie au clavier et adapte dynamiquement la hauteur de la TextBox selon les lignes tapées.")
+    Public void AttachFloatingInputWithDynamicHeight(
+            Final AndroidViewComponent inputContainer,
+            Final TextBoxBase textBoxComponent,
+            Final int maxHeightPx) {
 
-        if (title == null ||
-                title.trim().isEmpty()) {
+        If (inputContainer == null || textBoxComponent == null) return;
 
-            OnError("NavBarAdd: ID vide.");
-            return;
-        }
+        Final View container = inputContainer.getView();
+        View textDbView = textBoxComponent.getView();
 
-        if (navIds.contains(title)) {
+        If (container == null || !(textDbView instanceof EditText)) return;
 
-            OnError(
-                    "NavBarAdd: ID déjà utilisé: "
-                            + title
-            );
+        Final EditText editText = (EditText) textDbView;
+        Final View root = activity.getWindow().getDecorView().getRootView();
 
-            return;
-        }
+        // 1. Détection dynamique de l'extension multi-lignes
+        EditText.setMaxLines(10); // Autorise la croissance
+        EditText.setHorizontallyScrolling(false);
 
-        navIds.add(title);
+        ViewGroup.LayoutParams params = editText.getLayoutParams();
+        Params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        EditText.setLayoutParams(params);
 
-        navIcons.add(
-                iconName == null
-                        ? ""
-                        : iconName
-        );
-    }
-
-    // =========================================================
-    // NAVBAR INITIALIZE
-    // =========================================================
-
-    @SimpleFunction(
-            description =
-                    "Initialise la barre de navigation flottante."
-    )
-    public void NavBarInitialize(
-            final AndroidViewComponent container) {
-
-        if (navBarInitialized) {
-            return;
-        }
-
-        if (navIds.isEmpty()) {
-
-            OnError(
-                    "NavBarInitialize: aucune icône ajoutée."
-            );
-
-            return;
-        }
-
-        /*
-         * IMPORTANT :
-         *
-         * Screen.Initialize peut être appelé avant que
-         * l'arbre graphique Android soit complètement rendu.
-         *
-         * On utilise post() pour attendre que le DecorView
-         * soit prêt.
-         */
-
-        final Handler handler =
-                new Handler(Looper.getMainLooper());
-
-        handler.post(new Runnable() {
+        EditText.addTextChangedListener(new TextWatcher() {
+            @Override
+            Public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
             @Override
-            public void run() {
-
-                if (navBarInitialized) {
-                    return;
+            Public void onTextChanged(CharSequence s, int start, int before, int count) {
+                If (maxHeightPx > 0 && editText.getHeight() > maxHeightPx) {
+                    ViewGroup.LayoutParams lp = editText.getLayoutParams();
+                    Lp.height = maxHeightPx;
+                    EditText.setLayoutParams(lp);
                 }
-
-                try {
-
-                    View contentView =
-                            activity.getWindow()
-                                    .getDecorView()
-                                    .findViewById(
-                                            android.R.id.content
-                                    );
-
-                    if (!(contentView instanceof FrameLayout)) {
-
-                        /*
-                         * Si Android n'a pas encore créé
-                         * le content root, on réessaie.
-                         */
-
-                        handler.postDelayed(
-                                this,
-                                100
-                        );
-
-                        return;
-                    }
-
-                    final FrameLayout contentRoot =
-                            (FrameLayout) contentView;
-
-                    // =================================================
-                    // ROOT NAVIGATION
-                    // =================================================
-
-                    navBarRoot =
-                            new FrameLayout(activity);
-
-                    navBarRoot.setClipChildren(false);
-                    navBarRoot.setClipToPadding(false);
-
-                    FrameLayout.LayoutParams rootParams =
-                            new FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                            );
-
-                    contentRoot.addView(
-                            navBarRoot,
-                            rootParams
-                    );
-
-                    // =================================================
-                    // BAR
-                    // =================================================
-
-                    navBarView =
-                            new LinearLayout(activity);
-
-                    navBarView.setOrientation(
-                            LinearLayout.HORIZONTAL
-                    );
-
-                    navBarView.setGravity(
-                            Gravity.CENTER
-                    );
-
-                    navBarView.setPadding(
-                            dpToPx(4),
-                            dpToPx(4),
-                            dpToPx(4),
-                            dpToPx(4)
-                    );
-
-                    GradientDrawable background =
-                            new GradientDrawable();
-
-                    background.setColor(Color.WHITE);
-
-                    background.setCornerRadius(
-                            dpToPx(30)
-                    );
-
-                    navBarView.setBackground(
-                            background
-                    );
-
-                    if (Build.VERSION.SDK_INT >=
-                            Build.VERSION_CODES.LOLLIPOP) {
-
-                        navBarView.setElevation(
-                                dpToPx(10)
-                        );
-                    }
-
-                    // =================================================
-                    // ITEMS
-                    // =================================================
-
-                    for (int i = 0;
-                         i < navIds.size();
-                         i++) {
-
-                        final String id =
-                                navIds.get(i);
-
-                        final String icon =
-                                navIcons.get(i);
-
-                        FrameLayout item =
-                                new FrameLayout(activity);
-
-                        LinearLayout.LayoutParams itemParams =
-                                new LinearLayout.LayoutParams(
-                                        0,
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        1f
-                                );
-
-                        itemParams.setMargins(
-                                dpToPx(2),
-                                0,
-                                dpToPx(2),
-                                0
-                        );
-
-                        item.setLayoutParams(
-                                itemParams
-                        );
-
-                        // =================================================
-                        // CIRCLE
-                        // =================================================
-
-                        View circle =
-                                new View(activity);
-
-                        GradientDrawable circleBg =
-                                new GradientDrawable();
-
-                        circleBg.setShape(
-                                GradientDrawable.OVAL
-                        );
-
-                        circleBg.setColor(
-                                Color.argb(
-                                        30,
-                                        0,
-                                        0,
-                                        0
-                                )
-                        );
-
-                        circle.setBackground(
-                                circleBg
-                        );
-
-                        circle.setAlpha(0f);
-
-                        FrameLayout.LayoutParams circleParams =
-                                new FrameLayout.LayoutParams(
-                                        dpToPx(46),
-                                        dpToPx(46)
-                                );
-
-                        circleParams.gravity =
-                                Gravity.CENTER;
-
-                        item.addView(
-                                circle,
-                                circleParams
-                        );
-
-                        // =================================================
-                        // ICON
-                        // =================================================
-
-                        final ImageView image =
-                                new ImageView(activity);
-
-                        image.setScaleType(
-                                ImageView.ScaleType.CENTER_INSIDE
-                        );
-
-                        FrameLayout.LayoutParams imageParams =
-                                new FrameLayout.LayoutParams(
-                                        dpToPx(navIconSizeDp),
-                                        dpToPx(navIconSizeDp)
-                                );
-
-                        imageParams.gravity =
-                                Gravity.CENTER;
-
-                        try {
-
-                            DrawableCompatHelper
-                                    .setIcon(
-                                            image,
-                                            form,
-                                            icon
-                                    );
-
-                        } catch (Exception e) {
-
-                            try {
-
-                                image.setImageDrawable(
-                                        MediaUtil
-                                                .getBitmapDrawable(
-                                                        form,
-                                                        icon
-                                                )
-                                );
-
-                            } catch (Exception ignored) {
-                            }
-                        }
-
-                        image.setColorFilter(
-                                new PorterDuffColorFilter(
-                                        Color.rgb(
-                                                150,
-                                                150,
-                                                150
-                                        ),
-                                        PorterDuff.Mode.SRC_IN
-                                )
-                        );
-
-                        item.addView(
-                                image,
-                                imageParams
-                        );
-
-                        final View finalCircle =
-                                circle;
-
-                        final ImageView finalImage =
-                                image;
-
-                        item.setOnClickListener(
-                                new View.OnClickListener() {
-
-                                    @Override
-                                    public void onClick(
-                                            View v) {
-
-                                        selectNavItem(
-                                                id,
-                                                finalCircle,
-                                                finalImage
-                                        );
-                                    }
-                                }
-                        );
-
-                        navImages.add(image);
-                        navCircles.add(circle);
-
-                        navBarView.addView(item);
-                    }
-
-                    // =================================================
-                    // POSITION BAR
-                    // =================================================
-
-                    FrameLayout.LayoutParams barParams =
-                            new FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    dpToPx(64)
-                            );
-
-                    barParams.gravity =
-                            Gravity.BOTTOM |
-                            Gravity.CENTER_HORIZONTAL;
-
-                    barParams.leftMargin =
-                            dpToPx(12);
-
-                    barParams.rightMargin =
-                            dpToPx(12);
-
-                    barParams.bottomMargin =
-                            dpToPx(12);
-
-                    navBarRoot.addView(
-                            navBarView,
-                            barParams
-                    );
-
-                    navBarInitialized = true;
-
-                } catch (Exception e) {
-
-                    e.printStackTrace();
-
-                    OnError(
-                            "NavBarInitialize: "
-                                    + e.getMessage()
-                    );
+            }
+
+            @Override
+            Public void afterTextChanged(Editable s) {}
+        });
+
+        // 2. Suivi de la position au-dessus du clavier
+        Root.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            Public void onGlobalLayout() {
+                Rect rect = new Rect();
+                Root.getWindowVisibleDisplayFrame(rect);
+
+                Int screenHeight = root.getRootView().getHeight();
+                Int keyboardHeight = screenHeight - rect.bottom;
+
+                If (keyboardHeight > screenHeight * 0.15f) {
+                    Container.setTranslationY(-keyboardHeight);
+                } else {
+                    Container.setTranslationY(0);
                 }
             }
         });
     }
 
-    // =========================================================
-    // NAVBAR SELECT
-    // =========================================================
+    // =========================================================================
+    // 3. CATALOGUE DE PRODUITS 2x2 NATIVE
+    // =========================================================================
 
-    @SimpleFunction(
-            description =
-                    "Sélectionne un élément de la barre de navigation par index."
-    )
-    public void NavBarSelect(
-            final int index) {
+    @SimpleFunction(description = "Construit la grille de produits depuis un JSON sans élévation.")
+    Public void BuildProductGridFromJson(
+            Final AndroidViewComponent scrollContainer,
+            Final String jsonData) {
 
-        if (index < 0 ||
-                index >= navIds.size()) {
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    Final JSONArray array = new JSONArray(jsonData);
+                    Final int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+                    Final int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
 
-            OnError(
-                    "NavBarSelect: index invalide."
-            );
+                    RunOnUi(new Runnable() {
+                        @Override
+                        Public void run() {
+                            Try {
+                                ViewGroup targetLayout = getRealLayout(scrollContainer);
+                                If (targetLayout == null) return;
 
-            return;
-        }
+                                TargetLayout.removeAllViews();
 
-        runOnUi(
-                new Runnable() {
+                                Int cardWidth = (int) (screenWidth * 0.44);
+                                Int cardHeight = (int) (screenHeight * 0.28);
 
-                    @Override
-                    public void run() {
+                                LinearLayout currentRow = null;
 
-                        View circle =
-                                navCircles.size() > index
-                                        ? navCircles.get(index)
-                                        : null;
+                                For (int i = 0; i < array.length(); i++) {
+                                    JSONObject item = array.getJSONObject(i);
 
-                        ImageView image =
-                                navImages.size() > index
-                                        ? navImages.get(index)
-                                        : null;
+                                    Final String uid = item.optString("uid", String.valueOf(i));
+                                    String imageStr = item.optString("image", "");
+                                    String titleStr = item.optString("title", "");
+                                    String priceStr = item.optString("price", "");
 
-                        selectNavItem(
-                                navIds.get(index),
-                                circle,
-                                image
-                        );
-                    }
+                                    If (i % 2 == 0) {
+                                        CurrentRow = new LinearLayout(context);
+                                        CurrentRow.setOrientation(LinearLayout.HORIZONTAL);
+                                        CurrentRow.setGravity(Gravity.CENTER_HORIZONTAL);
+
+                                        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                                LinearLayout.LayoutParams.WRAP_CONTENT
+                                        );
+                                        RowParams.setMargins(0, 8, 0, 8);
+                                        CurrentRow.setLayoutParams(rowParams);
+
+                                        TargetLayout.addView(currentRow);
+                                    }
+
+                                    CardView card = new CardView(context);
+                                    LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                                            CardWidth,
+                                            CardHeight
+                                    );
+                                    CardParams.setMargins(10, 8, 10, 8);
+                                    Card.setLayoutParams(cardParams);
+                                    Card.setRadius(20f);
+                                    Card.setCardBackgroundColor(Color.WHITE);
+                                    Card.setCardElevation(0f);
+                                    Card.setMaxCardElevation(0f);
+
+                                    LinearLayout inner = new LinearLayout(context);
+                                    Inner.setOrientation(LinearLayout.VERTICAL);
+                                    Inner.setBackgroundColor(Color.WHITE);
+                                    Inner.setLayoutParams(new LinearLayout.LayoutParams(
+                                            LinearLayout.LayoutParams.MATCH_PARENT,
+                                            LinearLayout.LayoutParams.MATCH_PARENT
+                                    ));
+
+                                    ImageView img = new ImageView(context);
+                                    LinearLayout.LayoutParams imgParams = new LinearLayout.LayoutParams(
+                                            LinearLayout.LayoutParams.MATCH_PARENT,
+                                            0,
+                                            1.0f
+                                    );
+                                    Img.setLayoutParams(imgParams);
+                                    Img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                                    Img.setBackgroundColor(Color.parseColor("#F5F5F5"));
+
+                                    LoadImageAsync(img, imageStr);
+                                    Inner.addView(img);
+
+                                    TextView titleTv = new TextView(context);
+                                    TitleTv.setText(titleStr);
+                                    TitleTv.setTextColor(Color.BLACK);
+                                    TitleTv.setTextSize(13);
+                                    TitleTv.setMaxLines(2);
+                                    TitleTv.setPadding(14, 8, 14, 0);
+
+                                    If (customTypeface != null) {
+                                        TitleTv.setTypeface(customTypeface);
+                                    }
+                                    Inner.addView(titleTv);
+
+                                    TextView priceTv = new TextView(context);
+                                    PriceTv.setText(priceStr);
+                                    PriceTv.setTextColor(Color.BLACK);
+                                    PriceTv.setTextSize(14);
+                                    PriceTv.setTypeface(null, Typeface.BOLD);
+                                    PriceTv.setPadding(14, 2, 14, 12);
+
+                                    If (customTypeface != null) {
+                                        PriceTv.setTypeface(customTypeface, Typeface.BOLD);
+                                    }
+                                    Inner.addView(priceTv);
+
+                                    Card.addView(inner);
+
+                                    Card.setOnClickListener(new View.OnClickListener() {
+                                        @Override
+                                        Public void onClick(View v) {
+                                            OnProductCardClick(uid);
+                                        }
+                                    });
+
+                                    If (currentRow != null) {
+                                        CurrentRow.addView(card);
+                                    }
+                                }
+
+                            } catch (Exception e) {
+                                E.printStackTrace();
+                            }
+                        }
+                    });
+
+                } catch (Exception e) {
+                    E.printStackTrace();
                 }
-        );
-    }
-
-    // =========================================================
-    // SELECT NAV ITEM
-    // =========================================================
-
-    private void selectNavItem(
-            String id,
-            View circle,
-            ImageView image) {
-
-        if (id == null ||
-                circle == null ||
-                image == null) {
-
-            return;
-        }
-
-        if (id.equals(selectedNavId)) {
-            return;
-        }
-
-        if (selectedNavId != null) {
-
-            int oldIndex =
-                    navIds.indexOf(
-                            selectedNavId
-                    );
-
-            if (oldIndex >= 0 &&
-                    oldIndex < navCircles.size() &&
-                    oldIndex < navImages.size()) {
-
-                animateNavItem(
-                        navCircles.get(oldIndex),
-                        navImages.get(oldIndex),
-                        false
-                );
             }
-        }
-
-        animateNavItem(
-                circle,
-                image,
-                true
-        );
-
-        selectedNavId = id;
-
-        OnSelected(id);
+        });
     }
 
-    // =========================================================
-    // ANIMATION NAV ITEM
-    // =========================================================
+    // =========================================================================
+    // 3B. LISTE DYNAMIQUE DE CATÉGORIES
+    // =========================================================================
 
-    private void animateNavItem(
-            final View circle,
-            final ImageView image,
-            boolean selected) {
+    @SimpleFunction(description = "Génère la liste des catégories/sous-catégories depuis un JSON.")
+    Public void BuildCategoryListFromJson(
+            Final AndroidViewComponent listContainer,
+            Final String categoriesJson) {
 
-        final float start =
-                circle.getAlpha();
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    Final JSONArray mainArray = new JSONArray(categoriesJson);
 
-        final float end =
-                selected ? 1f : 0f;
+                    RunOnUi(new Runnable() {
+                        @Override
+                        Public void run() {
+                            Try {
+                                ViewGroup target = getRealLayout(listContainer);
+                                If (target == null) return;
 
-        android.animation.ValueAnimator animator =
-                android.animation.ValueAnimator
-                        .ofFloat(start, end);
+                                Target.removeAllViews();
 
-        animator.setDuration(220);
+                                RadioGroup group = new RadioGroup(activity);
+                                Group.setOrientation(LinearLayout.VERTICAL);
 
-        animator.addUpdateListener(
-                new android.animation.ValueAnimator
-                        .AnimatorUpdateListener() {
+                                ColorStateList radioColors = ColorStateList.valueOf(radioButtonColor);
 
-                    @Override
-                    public void onAnimationUpdate(
-                            android.animation.ValueAnimator animation) {
+                                For (int i = 0; i < mainArray.length(); i++) {
+                                    JSONObject category = mainArray.getJSONObject(i);
+                                    String categoryName = category.optString("title", "");
+                                    JSONArray subCategories = category.optJSONArray("subcategories");
 
-                        float value =
-                                (float)
-                                        animation
-                                                .getAnimatedValue();
+                                    TextView header = new TextView(activity);
+                                    Header.setText(">  " + categoryName);
+                                    Header.setTextColor(Color.parseColor("#E91A1A1B"));
+                                    Header.setTextSize(18);
+                                    Header.setTypeface(customTypeface, Typeface.BOLD);
+                                    Header.setPadding(0, (int) dpToPx(16), 0, (int) dpToPx(8));
 
-                        circle.setAlpha(value);
+                                    Group.addView(header);
 
-                        int color =
-                                mixColor(
-                                        Color.rgb(
-                                                150,
-                                                150,
-                                                150
-                                        ),
-                                        Color.rgb(
-                                                20,
-                                                20,
-                                                20
-                                        ),
-                                        value
-                                );
+                                    If (subCategories != null) {
+                                        For (int j = 0; j < subCategories.length(); j++) {
+                                            JSONObject sub = subCategories.getJSONObject(j);
+                                            Final String id = sub.optString("id", "");
+                                            Final String title = sub.optString("title", "");
 
-                        image.setColorFilter(
-                                new PorterDuffColorFilter(
-                                        color,
-                                        PorterDuff.Mode.SRC_IN
+                                            RadioButton button = new RadioButton(activity);
+                                            Button.setId(View.generateViewId());
+                                            Button.setText(title);
+                                            Button.setTextColor(Color.parseColor("#C01A1A1B"));
+                                            Button.setTextSize(13);
+
+                                            If (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                                Button.setButtonTintList(radioColors);
+                                            }
+
+                                            If (customTypeface != null) {
+                                                Button.setTypeface(customTypeface);
+                                            }
+
+                                            Button.setPadding(
+                                                    (int) dpToPx(8),
+                                                    (int) dpToPx(12),
+                                                    (int) dpToPx(8),
+                                                    (int) dpToPx(12)
+                                            );
+
+                                            Button.setOnClickListener(new View.OnClickListener() {
+                                                @Override
+                                                Public void onClick(View v) {
+                                                    OnCategorySelected(id, title);
+                                                }
+                                            });
+
+                                            Group.addView(button);
+
+                                            View divider = new View(activity);
+                                            Divider.setLayoutParams(new LinearLayout.LayoutParams(
+                                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                                    (int) dpToPx(1)
+                                            ));
+                                            Divider.setBackgroundColor(Color.parseColor("#F0F0F0"));
+
+                                            Group.addView(divider);
+                                        }
+                                    }
+                                }
+
+                                Target.addView(group);
+
+                            } catch (Exception e) {
+                                E.printStackTrace();
+                            }
+                        }
+                    });
+
+                } catch (Exception e) {
+                    E.printStackTrace();
+                }
+            }
+        });
+    }
+
+    // =========================================================================
+    // 4. EFFETS VISUELS
+    // =========================================================================
+
+    @SimpleFunction(description = "Applique un dégradé de couleur sur un composant.")
+    Public void SetGradientBackground(
+            Final AndroidViewComponent component,
+            Final int startColor,
+            Final int endColor,
+            Final String orientation) {
+
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    GradientDrawable.Orientation gradOrientation = GradientDrawable.Orientation.TOP_BOTTOM;
+
+                    If ("LEFT_RIGHT".equalsIgnoreCase(orientation)) {
+                        GradOrientation = GradientDrawable.Orientation.LEFT_RIGHT;
+                    }
+
+                    GradientDrawable gd = new GradientDrawable(
+                            GradOrientation,
+                            New int[]{startColor, endColor}
+                    );
+                    Gd.setCornerRadius(0f);
+                    Component.getView().setBackground(gd);
+
+                } catch (Exception e) {
+                    E.printStackTrace();
+                }
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Applique un effet de flou (Glassmorphism) sur un composant.")
+    Public void SetBlurEffect(final AndroidViewComponent component, final float radius) {
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    View view = component.getView();
+
+                    If (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        Float blurRadius = Math.max(1f, Math.min(radius, 25f));
+                        View.setRenderEffect(
+                                RenderEffect.createBlurEffect(
+                                        BlurRadius,
+                                        BlurRadius,
+                                        Shader.TileMode.CLAMP
                                 )
                         );
+                    } else {
+                        View.setBackgroundColor(Color.argb(150, 255, 255, 255));
                     }
+                } catch (Exception e) {
+                    E.printStackTrace();
                 }
-        );
-
-        animator.start();
+            }
+        });
     }
 
-    // =========================================================
-    // MIX COLOR
-    // =========================================================
+    // =========================================================================
+    // 5. DIALOGUE TRANSPARENT, NOTIFICATION & GESTION SONORE
+    // =========================================================================
 
-    private int mixColor(
-            int c1,
-            int c2,
-            float ratio) {
+    @SimpleFunction(description = "Affiche un composant sous forme de dialogue transparent.")
+    Public void ShowAlphaDialog(
+            Final AndroidViewComponent dialogContentLayout,
+            Final boolean cancelable) {
 
-        ratio =
-                Math.max(
-                        0f,
-                        Math.min(
-                                1f,
-                                ratio
-                        )
-                );
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    If (activeAlphaDialog != null && activeAlphaDialog.isShowing()) {
+                        ActiveAlphaDialog.dismiss();
+                    }
 
-        int r =
-                (int)
-                        (
-                                Color.red(c1)
-                                        +
-                                        ratio *
-                                                (
-                                                        Color.red(c2)
-                                                                -
-                                                                Color.red(c1)
-                                                )
+                    ActiveAlphaDialog = new Dialog(activity);
+                    ActiveAlphaDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+                    View contentView = dialogContentLayout.getView();
+                    If (contentView.getParent() != null) {
+                        ((ViewGroup) contentView.getParent()).removeView(contentView);
+                    }
+
+                    ActiveAlphaDialog.setContentView(contentView);
+
+                    If (activeAlphaDialog.getWindow() != null) {
+                        ActiveAlphaDialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                        ActiveAlphaDialog.getWindow().setLayout(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
                         );
+                    }
 
-        int g =
-                (int)
-                        (
-                                Color.green(c1)
-                                        +
-                                        ratio *
-                                                (
-                                                        Color.green(c2)
-                                                                -
-                                                                Color.green(c1)
-                                                )
-                        );
+                    ActiveAlphaDialog.setCancelable(cancelable);
+                    ActiveAlphaDialog.show();
 
-        int b =
-                (int)
-                        (
-                                Color.blue(c1)
-                                        +
-                                        ratio *
-                                                (
-                                                        Color.blue(c2)
-                                                                -
-                                                                Color.blue(c1)
-                                                )
-                        );
-
-        return Color.rgb(r, g, b);
+                } catch (Exception e) {
+                    E.printStackTrace();
+                }
+            }
+        });
     }
 
-    // =========================================================
-    // NAVBAR ICON SIZE
-    // =========================================================
+    @SimpleFunction(description = "Ferme le dialogue Alpha.")
+    Public void DismissAlphaDialog() {
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                If (activeAlphaDialog != null && activeAlphaDialog.isShowing()) {
+                    ActiveAlphaDialog.dismiss();
+                    ActiveAlphaDialog = null;
+                }
+            }
+        });
+    }
 
-    @SimpleFunction(
-            description =
-                    "Définit la taille des icônes."
-    )
-    public void NavBarSetIconSize(
-            final int size) {
-
-        if (size <= 0) {
-            return;
-        }
-
-        navIconSizeDp = size;
-
-        runOnUi(
-                new Runnable() {
-
+    @SimpleFunction(description = "Notification personnalisée temporaire.")
+    Public void CustomNotifier(final AndroidViewComponent customLayout, final int durationMs) {
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                ShowAlphaDialog(customLayout, true);
+                New Handler().postDelayed(new Runnable() {
                     @Override
-                    public void run() {
-
-                        for (ImageView image :
-                                navImages) {
-
-                            ViewGroup.LayoutParams params =
-                                    image.getLayoutParams();
-
-                            if (params != null) {
-
-                                params.width =
-                                        dpToPx(
-                                                navIconSizeDp
-                                        );
-
-                                params.height =
-                                        dpToPx(
-                                                navIconSizeDp
-                                        );
-
-                                image.setLayoutParams(
-                                        params
-                                );
-                            }
-                        }
+                    Public void run() {
+                        DismissAlphaDialog();
                     }
-                }
-        );
+                }, durationMs);
+            }
+        });
     }
 
-    // =========================================================
-    // CHAT NATIF
-    // =========================================================
-
-    @SimpleFunction(
-            description =
-                    "Ajoute une bulle de chat native avec avatar."
-    )
-    public void AddChatBubble(
-            final AndroidViewComponent chatContainer,
-            final String messageText,
-            final String timeText,
-            final String avatarUrl,
-            final boolean isMe,
-            final int bubbleColor,
-            final int textColor) {
-
-        runOnUi(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            ViewGroup target =
-                                    getRealLayout(
-                                            chatContainer
-                                    );
-
-                            if (target == null) {
-                                return;
-                            }
-
-                            int screenWidth =
-                                    activity
-                                            .getResources()
-                                            .getDisplayMetrics()
-                                            .widthPixels;
-
-                            LinearLayout row =
-                                    new LinearLayout(
-                                            context
-                                    );
-
-                            row.setOrientation(
-                                    LinearLayout.HORIZONTAL
-                            );
-
-                            row.setGravity(
-                                    isMe
-                                            ? Gravity.END
-                                            : Gravity.START
-                            );
-
-                            LinearLayout.LayoutParams rowParams =
-                                    new LinearLayout.LayoutParams(
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            ViewGroup.LayoutParams.WRAP_CONTENT
-                                    );
-
-                            rowParams.setMargins(
-                                    dpToPx(8),
-                                    dpToPx(4),
-                                    dpToPx(8),
-                                    dpToPx(4)
-                            );
-
-                            row.setLayoutParams(
-                                    rowParams
-                            );
-
-                            int avatarSize =
-                                    dpToPx(32);
-
-                            CardView avatarCard =
-                                    new CardView(context);
-
-                            LinearLayout.LayoutParams avatarParams =
-                                    new LinearLayout.LayoutParams(
-                                            avatarSize,
-                                            avatarSize
-                                    );
-
-                            avatarParams.gravity =
-                                    Gravity.CENTER_VERTICAL;
-
-                            avatarParams.setMargins(
-                                    dpToPx(6),
-                                    0,
-                                    dpToPx(6),
-                                    0
-                            );
-
-                            avatarCard.setLayoutParams(
-                                    avatarParams
-                            );
-
-                            avatarCard.setRadius(
-                                    avatarSize / 2f
-                            );
-
-                            avatarCard.setCardElevation(0f);
-
-                            avatarCard.setCardBackgroundColor(
-                                    Color.parseColor(
-                                            "#E0E0E0"
-                                    )
-                            );
-
-                            ImageView avatar =
-                                    new ImageView(context);
-
-                            avatar.setLayoutParams(
-                                    new ViewGroup.LayoutParams(
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
-                            );
-
-                            avatar.setScaleType(
-                                    ImageView.ScaleType.CENTER_CROP
-                            );
-
-                            if (avatarUrl != null &&
-                                    !avatarUrl
-                                            .trim()
-                                            .isEmpty()) {
-
-                                loadImageAsync(
-                                        avatar,
-                                        avatarUrl
-                                );
-                            }
-
-                            avatarCard.addView(
-                                    avatar
-                            );
-
-                            avatarCard.setOnClickListener(
-                                    new View.OnClickListener() {
-
-                                        @Override
-                                        public void onClick(
-                                                View v) {
-
-                                            OnAvatarClick(
-                                                    isMe
-                                            );
-                                        }
-                                    }
-                            );
-
-                            LinearLayout bubble =
-                                    new LinearLayout(
-                                            context
-                                    );
-
-                            bubble.setOrientation(
-                                    LinearLayout.VERTICAL
-                            );
-
-                            bubble.setPadding(
-                                    dpToPx(16),
-                                    dpToPx(10),
-                                    dpToPx(16),
-                                    dpToPx(10)
-                            );
-
-                            GradientDrawable bg =
-                                    new GradientDrawable();
-
-                            bg.setColor(
-                                    bubbleColor
-                            );
-
-                            bg.setCornerRadius(
-                                    dpToPx(22)
-                            );
-
-                            bubble.setBackground(bg);
-
-                            TextView message =
-                                    new TextView(context);
-
-                            message.setText(
-                                    messageText
-                            );
-
-                            message.setTextColor(
-                                    textColor
-                            );
-
-                            message.setTextSize(15);
-
-                            message.setMaxWidth(
-                                    (int)
-                                            (screenWidth *
-                                                    0.72f)
-                            );
-
-                            if (customTypeface != null) {
-                                message.setTypeface(
-                                        customTypeface
-                                );
-                            }
-
-                            bubble.addView(message);
-
-                            if (timeText != null &&
-                                    !timeText.isEmpty()) {
-
-                                TextView time =
-                                        new TextView(
-                                                context
-                                        );
-
-                                time.setText(
-                                        timeText
-                                );
-
-                                time.setTextColor(
-                                        Color.argb(
-                                                180,
-                                                Color.red(
-                                                        textColor
-                                                ),
-                                                Color.green(
-                                                        textColor
-                                                ),
-                                                Color.blue(
-                                                        textColor
-                                                )
-                                        )
-                                );
-
-                                time.setTextSize(10);
-
-                                LinearLayout.LayoutParams timeParams =
-                                        new LinearLayout.LayoutParams(
-                                                ViewGroup.LayoutParams.WRAP_CONTENT,
-                                                ViewGroup.LayoutParams.WRAP_CONTENT
-                                        );
-
-                                timeParams.gravity =
-                                        Gravity.END;
-
-                                time.setLayoutParams(
-                                        timeParams
-                                );
-
-                                bubble.addView(time);
-                            }
-
-                            if (isMe) {
-
-                                row.addView(
-                                        bubble
-                                );
-
-                                row.addView(
-                                        avatarCard
-                                );
-
-                            } else {
-
-                                row.addView(
-                                        avatarCard
-                                );
-
-                                row.addView(
-                                        bubble
-                                );
-                            }
-
-                            target.addView(row);
-
-                            ScrollToBottom(
-                                    chatContainer
-                            );
-
-                        } catch (Exception e) {
-
-                            e.printStackTrace();
-
-                            OnError(
-                                    "AddChatBubble Error: "
-                                            + e.getMessage()
-                            );
-                        }
+    @SimpleFunction(description = "Joue un son personnalisé (ex: envoi de message, notification).")
+    Public void PlayCustomSound(final String fileNameOrPath) {
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            Public void run() {
+                MediaPlayer mediaPlayer = null;
+                Try {
+                    MediaPlayer = new MediaPlayer();
+                    MediaPlayer.setAudioAttributes(
+                            New AudioAttributes.Builder()
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                                    .build()
+                    );
+
+                    If (fileNameOrPath.startsWith("/")) {
+                        MediaPlayer.setDataSource(fileNameOrPath);
+                    } else {
+                        Android.content.res.AssetFileDescriptor afd = context.getAssets().openFd(fileNameOrPath);
+                        MediaPlayer.setDataSource(
+                                Afd.getFileDescriptor(),
+                                Afd.getStartOffset(),
+                                Afd.getLength()
+                        );
+                        Afd.close();
                     }
-                }
-        );
-    }
 
-    // =========================================================
-    // SCROLL TO BOTTOM
-    // =========================================================
-
-    @SimpleFunction(
-            description =
-                    "Fait défiler une vue vers le bas."
-    )
-    public void ScrollToBottom(
-            final AndroidViewComponent scrollComponent) {
-
-        if (scrollComponent == null) {
-            return;
-        }
-
-        final View view =
-                scrollComponent.getView();
-
-        if (view instanceof ScrollView) {
-
-            final ScrollView scrollView =
-                    (ScrollView) view;
-
-            scrollView.post(
-                    new Runnable() {
-
+                    MediaPlayer.prepare();
+                    MediaPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
                         @Override
-                        public void run() {
-
-                            scrollView.fullScroll(
-                                    View.FOCUS_DOWN
-                            );
+                        Public void onCompletion(MediaPlayer mp) {
+                            Mp.release();
                         }
-                    }
-            );
-
-        } else if (view instanceof ViewGroup) {
-
-            final ViewGroup group =
-                    (ViewGroup) view;
-
-            group.post(
-                    new Runnable() {
-
-                        @Override
-                        public void run() {
-
-                            group.requestFocus();
-                        }
-                    }
-            );
-        }
-    }
-
-    // =========================================================
-    // ATTACH FLOATING INPUT
-    // =========================================================
-
-    @SimpleFunction(
-            description =
-                    "Attache la zone de saisie au-dessus du clavier avec hauteur maximale."
-    )
-    public void AttachFloatingInputWithDynamicHeight(
-            final AndroidViewComponent inputContainer,
-            final String editTextComponent,
-            final int maxHeightPx) {
-
-        if (inputContainer == null) {
-            return;
-        }
-
-        final View container =
-                inputContainer.getView();
-
-        if (container == null) {
-            return;
-        }
-
-        /*
-         * editTextComponent est maintenant un String.
-         *
-         * Tu peux donc directement utiliser :
-         *
-         * TextBox.Text
-         *
-         * dans Kodular/App Inventor.
-         *
-         * La valeur n'a pas besoin d'être utilisée ici
-         * pour déplacer le container.
-         */
-
-        final String currentText =
-                editTextComponent == null
-                        ? ""
-                        : editTextComponent;
-
-        final View root =
-                activity
-                        .getWindow()
-                        .getDecorView()
-                        .getRootView();
-
-        root.getViewTreeObserver()
-                .addOnGlobalLayoutListener(
-                        new ViewTreeObserver
-                                .OnGlobalLayoutListener() {
-
-                            @Override
-                            public void onGlobalLayout() {
-
-                                try {
-
-                                    Rect rect =
-                                            new Rect();
-
-                                    root.getWindowVisibleDisplayFrame(
-                                            rect
-                                    );
-
-                                    int screenHeight =
-                                            root.getRootView()
-                                                    .getHeight();
-
-                                    int keyboardHeight =
-                                            screenHeight
-                                                    -
-                                                    rect.bottom;
-
-                                    /*
-                                     * Clavier détecté
-                                     */
-
-                                    if (keyboardHeight >
-                                            screenHeight *
-                                                    0.15f) {
-
-                                        int translation =
-                                                keyboardHeight;
-
-                                        if (maxHeightPx > 0) {
-
-                                            translation =
-                                                    Math.min(
-                                                            translation,
-                                                            maxHeightPx
-                                                    );
-                                        }
-
-                                        container.setTranslationY(
-                                                -translation
-                                        );
-
-                                    } else {
-
-                                        container.setTranslationY(
-                                                0
-                                        );
-                                    }
-
-                                } catch (Exception e) {
-
-                                    e.printStackTrace();
-                                }
-                            }
-                        }
-                );
-    }
-
-    // =========================================================
-    // PRODUITS
-    // =========================================================
-
-    @SimpleFunction(
-            description =
-                    "Génère une grille 2x2 de produits depuis un JSON."
-    )
-    public void BuildProductGridFromJson(
-            final AndroidViewComponent scrollContainer,
-            final String jsonData) {
-
-        AsynchUtil.runAsynchronously(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            final JSONArray array =
-                                    new JSONArray(
-                                            jsonData
-                                    );
-
-                            final int screenWidth =
-                                    activity
-                                            .getResources()
-                                            .getDisplayMetrics()
-                                            .widthPixels;
-
-                            runOnUi(
-                                    new Runnable() {
-
-                                        @Override
-                                        public void run() {
-
-                                            try {
-
-                                                ViewGroup target =
-                                                        getRealLayout(
-                                                                scrollContainer
-                                                        );
-
-                                                if (target == null) {
-                                                    return;
-                                                }
-
-                                                target.removeAllViews();
-
-                                                int cardWidth =
-                                                        (int)
-                                                                (
-                                                                        screenWidth *
-                                                                                0.43f
-                                                                );
-
-                                                int cardHeight =
-                                                        dpToPx(220);
-
-                                                LinearLayout row =
-                                                        null;
-
-                                                for (
-                                                        int i = 0;
-                                                        i < array.length();
-                                                        i++
-                                                ) {
-
-                                                    JSONObject item =
-                                                            array.getJSONObject(
-                                                                    i
-                                                            );
-
-                                                    final String uid =
-                                                            item.optString(
-                                                                    "uid",
-                                                                    String.valueOf(
-                                                                            i
-                                                                    )
-                                                            );
-
-                                                    String image =
-                                                            item.optString(
-                                                                    "image",
-                                                                    ""
-                                                            );
-
-                                                    String title =
-                                                            item.optString(
-                                                                    "title",
-                                                                    ""
-                                                            );
-
-                                                    String price =
-                                                            item.optString(
-                                                                    "price",
-                                                                    ""
-                                                            );
-
-                                                    if (i % 2 == 0) {
-
-                                                        row =
-                                                                new LinearLayout(
-                                                                        context
-                                                                );
-
-                                                        row.setOrientation(
-                                                                LinearLayout.HORIZONTAL
-                                                        );
-
-                                                        row.setGravity(
-                                                                Gravity.CENTER
-                                                        );
-
-                                                        row.setLayoutParams(
-                                                                new LinearLayout.LayoutParams(
-                                                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                                                        ViewGroup.LayoutParams.WRAP_CONTENT
-                                                                )
-                                                        );
-
-                                                        target.addView(
-                                                                row
-                                                        );
-                                                    }
-
-                                                    CardView card =
-                                                            new CardView(
-                                                                    context
-                                                            );
-
-                                                    LinearLayout.LayoutParams cardParams =
-                                                            new LinearLayout.LayoutParams(
-                                                                    cardWidth,
-                                                                    cardHeight
-                                                            );
-
-                                                    cardParams.setMargins(
-                                                            dpToPx(6),
-                                                            dpToPx(6),
-                                                            dpToPx(6),
-                                                            dpToPx(6)
-                                                    );
-
-                                                    card.setLayoutParams(
-                                                            cardParams
-                                                    );
-
-                                                    card.setRadius(
-                                                            dpToPx(16)
-                                                    );
-
-                                                    card.setCardBackgroundColor(
-                                                            Color.WHITE
-                                                    );
-
-                                                    card.setCardElevation(
-                                                            dpToPx(2)
-                                                    );
-
-                                                    LinearLayout inner =
-                                                            new LinearLayout(
-                                                                    context
-                                                            );
-
-                                                    inner.setOrientation(
-                                                            LinearLayout.VERTICAL
-                                                    );
-
-                                                    ImageView imageView =
-                                                            new ImageView(
-                                                                    context
-                                                            );
-
-                                                    imageView.setScaleType(
-                                                            ImageView.ScaleType.CENTER_CROP
-                                                    );
-
-                                                    imageView.setLayoutParams(
-                                                            new LinearLayout.LayoutParams(
-                                                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                                                    dpToPx(120)
-                                                            )
-                                                    );
-
-                                                    loadImageAsync(
-                                                            imageView,
-                                                            image
-                                                    );
-
-                                                    inner.addView(
-                                                            imageView
-                                                    );
-
-                                                    TextView titleView =
-                                                            new TextView(
-                                                                    context
-                                                            );
-
-                                                    titleView.setText(
-                                                            title
-                                                    );
-
-                                                    titleView.setTextColor(
-                                                            Color.BLACK
-                                                    );
-
-                                                    titleView.setTextSize(
-                                                            13
-                                                    );
-
-                                                    titleView.setMaxLines(
-                                                            2
-                                                    );
-
-                                                    titleView.setPadding(
-                                                            dpToPx(10),
-                                                            dpToPx(6),
-                                                            dpToPx(10),
-                                                            0
-                                                    );
-
-                                                    if (customTypeface != null) {
-
-                                                        titleView.setTypeface(
-                                                                customTypeface
-                                                        );
-                                                    }
-
-                                                    inner.addView(
-                                                            titleView
-                                                    );
-
-                                                    TextView priceView =
-                                                            new TextView(
-                                                                    context
-                                                            );
-
-                                                    priceView.setText(
-                                                            price
-                                                    );
-
-                                                    priceView.setTextColor(
-                                                            Color.BLACK
-                                                    );
-
-                                                    priceView.setTextSize(
-                                                            14
-                                                    );
-
-                                                    priceView.setPadding(
-                                                            dpToPx(10),
-                                                            dpToPx(2),
-                                                            dpToPx(10),
-                                                            dpToPx(8)
-                                                    );
-
-                                                    if (customTypeface != null) {
-
-                                                        priceView.setTypeface(
-                                                                customTypeface,
-                                                                Typeface.BOLD
-                                                        );
-                                                    }
-
-                                                    inner.addView(
-                                                            priceView
-                                                    );
-
-                                                    card.addView(
-                                                            inner
-                                                    );
-
-                                                    card.setOnClickListener(
-                                                            new View.OnClickListener() {
-
-                                                                @Override
-                                                                public void onClick(
-                                                                        View v) {
-
-                                                                    OnProductCardClick(
-                                                                            uid
-                                                                    );
-                                                                }
-                                                            }
-                                                    );
-
-                                                    if (row != null) {
-
-                                                        row.addView(
-                                                                card
-                                                        );
-                                                    }
-                                                }
-
-                                            } catch (Exception e) {
-
-                                                e.printStackTrace();
-
-                                                OnError(
-                                                        "BuildProductGrid Error: "
-                                                                + e.getMessage()
-                                                );
-                                            }
-                                        }
-                                    }
-                            );
-
-                        } catch (Exception e) {
-
-                            e.printStackTrace();
-
-                            OnError(
-                                    "JSON Error: "
-                                            + e.getMessage()
-                            );
-                        }
+                    });
+                    MediaPlayer.start();
+
+                } catch (Exception e) {
+                    E.printStackTrace();
+                    If (mediaPlayer != null) {
+                        MediaPlayer.release();
                     }
                 }
-        );
+            }
+        });
     }
 
-    // =========================================================
-    // CATEGORIES
-    // =========================================================
+    // =========================================================================
+    // 6. GALERIE D'IMAGES & COMPRESSION
+    // =========================================================================
 
-    @SimpleFunction(
-            description =
-                    "Génère la liste dynamique des catégories."
-    )
-    public void BuildCategoryListFromJson(
-            final AndroidViewComponent listContainer,
-            final String categoriesJson) {
-
-        AsynchUtil.runAsynchronously(
-                new Runnable() {
-
-                    @Override
-                    public void run() {
-
-                        try {
-
-                            final JSONArray mainArray =
-                                    new JSONArray(
-                                            categoriesJson
-                                    );
-
-                            runOnUi(
-                                    new Runnable() {
-
-                                        @Override
-                                        public void run() {
-
-                                            try {
-
-                                                ViewGroup target =
-                                                        getRealLayout(
-                                                                listContainer
-                                                        );
-
-                                                if (target == null) {
-                                                    return;
-                                                }
-
-                                                target.removeAllViews();
-
-                                                RadioGroup group =
-                                                        new RadioGroup(
-                                                                activity
-                                                        );
-
-                                                group.setOrientation(
-                                                        LinearLayout.VERTICAL
-                                                );
-
-                                                ColorStateList radioColors =
-                                                        ColorStateList.valueOf(
-                                                                radioButtonColor
-                                                        );
-
-                                                for (
-                                                        int i = 0;
-                                                        i < mainArray.length();
-                                                        i++
-                                                ) {
-
-                                                    JSONObject category =
-                                                            mainArray
-                                                                    .getJSONObject(
-                                                                            i
-                                                                    );
-
-                                                    String categoryName =
-                                                            category.optString(
-                                                                    "title",
-                                                                    ""
-                                                            );
-
-                                                    JSONArray subCategories =
-                                                            category.optJSONArray(
-                                                                    "subcategories"
-                                                            );
-
-                                                    TextView header =
-                                                            new TextView(
-                                                                    activity
-                                                            );
-
-                                                    header.setText(
-                                                            ">  "
-                                                                    + categoryName
-                                                    );
-
-                                                    header.setTextColor(
-                                                            Color.parseColor(
-                                                                    "#E91A1A1B"
-                                                            )
-                                                    );
-
-                                                    header.setTextSize(
-                                                            18
-                                                    );
-
-                                                    header.setTypeface(
-                                                            customTypeface,
-                                                            Typeface.BOLD
-                                                    );
-
-                                                    header.setPadding(
-                                                            0,
-                                                            dpToPx(16),
-                                                            0,
-                                                            dpToPx(8)
-                                                    );
-
-                                                    group.addView(
-                                                            header
-                                                    );
-
-                                                    if (subCategories != null) {
-
-                                                        for (
-                                                                int j = 0;
-                                                                j < subCategories.length();
-                                                                j++
-                                                        ) {
-
-                                                            JSONObject sub =
-                                                                    subCategories
-                                                                            .getJSONObject(
-                                                                                    j
-                                                                            );
-
-                                                            final String id =
-                                                                    sub.optString(
-                                                                            "id",
-                                                                            ""
-                                                                    );
-
-                                                            final String title =
-                                                                    sub.optString(
-                                                                            "title",
-                                                                            ""
-                                                                    );
-
-                                                            RadioButton button =
-                                                                    new RadioButton(
-                                                                            activity
-                                                                    );
-
-                                                            button.setId(
-                                                                    View.generateViewId()
-                                                            );
-
-                                                            button.setText(
-                                                                    title
-                                                            );
-
-                                                            button.setTextColor(
-                                                                    Color.parseColor(
-                                                                            "#C01A1A1B"
-                                                                    )
-                                                            );
-
-                                                            button.setTextSize(
-                                                                    13
-                                                            );
-
-                                                            if (Build.VERSION.SDK_INT >=
-                                                                    Build.VERSION_CODES.LOLLIPOP) {
-
-                                                                button.setButtonTintList(
-                                                                        radioColors
-                                                                );
-                                                            }
-
-                                                            if (customTypeface != null) {
-
-                                                                button.setTypeface(
-                                                                        customTypeface
-                                                                );
-                                                            }
-
-                                                            button.setPadding(
-                                                                    dpToPx(8),
-                                                                    dpToPx(12),
-                                                                    dpToPx(8),
-                                                                    dpToPx(12)
-                                                            );
-
-                                                            button.setOnClickListener(
-                                                                    new View.OnClickListener() {
-
-                                                                        @Override
-                                                                        public void onClick(
-                                                                                View v) {
-
-                                                                            OnCategorySelected(
-                                                                                    id,
-                                                                                    title
-                                                                            );
-                                                                        }
-                                                                    }
-                                                            );
-
-                                                            group.addView(
-                                                                    button
-                                                            );
-
-                                                            View divider =
-                                                                    new View(
-                                                                            activity
-                                                                    );
-
-                                                            divider.setLayoutParams(
-                                                                    new LinearLayout.LayoutParams(
-                                                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                                                            dpToPx(1)
-                                                                    )
-                                                            );
-
-                                                            divider.setBackgroundColor(
-                                                                    Color.parseColor(
-                                                                            "#F0F0F0"
-                                                                    )
-                                                            );
-
-                                                            group.addView(
-                                                                    divider
-                                                            );
-                                                        }
-                                                    }
-                                                }
-
-                                                target.addView(
-                                                        group
-                                                );
-
-                                            } catch (Exception e) {
-
-                                                e.printStackTrace();
-                                            }
-                                        }
-                                    }
-                            );
-
-                        } catch (Exception e) {
-
-                            e.printStackTrace();
-                        }
-                    }
+    @SimpleFunction(description = "Ouvre la galerie d'images native.")
+    Public void OpenPhotoPicker() {
+        Activity.runOnUiThread(new Runnable() {
+            @Override
+            Public void run() {
+                Try {
+                    Intent intent = new Intent(Intent.ACTION_PICK);
+                    Intent.setType("image/*");
+                    Activity.startActivityForResult(intent, PICK_IMAGE_REQUEST);
+                } catch (Exception e) {
+                    E.printStackTrace();
                 }
-        );
+            }
+        });
     }
-
-    // =========================================================
-    // EVENTS
-    // =========================================================
-
-    @SimpleEvent(
-            description =
-                    "Déclenché lors de la sélection d'un onglet."
-    )
-    public void OnSelected(String id) {
-
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnSelected",
-                id
-        );
-    }
-
-    @SimpleEvent(
-            description =
-                    "Déclenché lorsqu'une carte produit est sélectionnée."
-    )
-    public void OnProductCardClick(
-            String productUid) {
-
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnProductCardClick",
-                productUid
-        );
-    }
-
-    @SimpleEvent(
-            description =
-                    "Déclenché lors du clic sur l'avatar."
-    )
-    public void OnAvatarClick(
-            boolean isMe) {
-
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnAvatarClick",
-                isMe
-        );
-    }
-
-    @SimpleEvent(
-            description =
-                    "Déclenché lorsqu'une catégorie est sélectionnée."
-    )
-    public void OnCategorySelected(
-            String categoryId,
-            String categoryTitle) {
-
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnCategorySelected",
-                categoryId,
-                categoryTitle
-        );
-    }
-
-    @SimpleEvent(
-            description =
-                    "Erreur de l'extension."
-    )
-    public void OnError(
-            String message) {
-
-        EventDispatcher.dispatchEvent(
-                this,
-                "OnError",
-                message
-        );
-    }
-
-    // =========================================================
-    // ACTIVITY RESULT
-    // =========================================================
 
     @Override
-    public void resultReturned(
-            int receivedRequestCode,
-            int resultCode,
-            Intent data) {
-    }
-
-    // =========================================================
-    // DRAWABLE HELPER
-    // =========================================================
-
-    private static class DrawableCompatHelper {
-
-        static void setIcon(
-                ImageView image,
-                Form form,
-                String path)
-                throws Exception {
-
-            image.setImageDrawable(
-                    MediaUtil.getBitmapDrawable(
-                            form,
-                            path
-                    )
-            );
+    Public void resultReturned(int requestCode, int resultCode, Intent data) {
+        If (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
+            Uri selectedImageUri = data.getData();
+            If (selectedImageUri != null) {
+                OnPhotoPicked(selectedImageUri.toString());
+            }
         }
     }
-                            }
+
+    @SimpleFunction(description = "Compresse une image sans surcharger la mémoire.")
+    Public String CompressImage(String imagePath, int quality, int maxWidth) {
+        Try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            Options.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(imagePath, options);
+
+            If (options.outWidth <= 0 || options.outHeight <= 0) {
+                Return imagePath;
+            }
+
+            Int srcWidth = options.outWidth;
+            Int inSampleSize = 1;
+
+            If (srcWidth > maxWidth) {
+                InSampleSize = Math.round((float) srcWidth / (float) maxWidth);
+            }
+
+            Options.inJustDecodeBounds = false;
+            Options.inSampleSize = inSampleSize;
+
+            Bitmap bitmap = BitmapFactory.decodeFile(imagePath, options);
+            If (bitmap == null) return imagePath;
+
+            File outputFile = new File(
+                    Context.getCacheDir(),
+                    "comp_" + System.currentTimeMillis() + ".jpg"
+            );
+
+            FileOutputStream out = null;
+            Try {
+                Out = new FileOutputStream(outputFile);
+                Bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
+                Out.flush();
+            } finally {
+                If (out != null) out.close();
+                Bitmap.recycle();
+            }
+
+            Return outputFile.getAbsolutePath();
+
+        } catch (Exception e) {
+            E.printStackTrace();
+            Return imagePath;
+        }
+    }
+
+    // =========================================================================
+    // 7. REQUÊTES SERVEUR
+    // =========================================================================
+
+    @SimpleFunction(description = "Envoie une requête HTTPS au serveur.")
+    Public void CallServerRequest(
+            Final String endpointUrl,
+            Final String method,
+            Final String headersJson,
+            Final String bodyJson) {
+
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            Public void run() {
+                HttpURLConnection conn = null;
+                Try {
+                    URL url = new URL(endpointUrl);
+                    Conn = (HttpURLConnection) url.openConnection();
+                    Conn.setConnectTimeout(15000);
+                    Conn.setReadTimeout(15000);
+                    Conn.setRequestMethod("POST".equalsIgnoreCase(method) ? "POST" : "GET");
+
+                    If (headersJson != null && !headersJson.isEmpty()) {
+                        JSONObject headers = new JSONObject(headersJson);
+                        Iterator<String> keys = headers.keys();
+                        While (keys.hasNext()) {
+                            String key = keys.next();
+                            Conn.setRequestProperty(key, headers.getString(key));
+                        }
+                    }
+
+                    If ("POST".equalsIgnoreCase(method)) {
+                        Conn.setDoOutput(true);
+                        Conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                        If (bodyJson != null) {
+                            OutputStream os = conn.getOutputStream();
+                            Os.write(bodyJson.getBytes("UTF-8"));
+                            Os.flush();
+                            Os.close();
+                        }
+                    }
+
+                    Final int responseCode = conn.getResponseCode();
+                    InputStream is = (responseCode >= 200 && responseCode < 400)
+                            ? Conn.getInputStream()
+                            : conn.getErrorStream();
+
+                    Final String responseContent = lireFlux(is);
+
+                    Activity.runOnUiThread(new Runnable() {
+                        @Override
+                        Public void run() {
+                            OnServerResponse(responseCode, responseContent);
+                        }
+                    });
+
+                } catch (final Exception e) {
+                    Activity.runOnUiThread(new Runnable() {
+                        @Override
+                        Public void run() {
+                            OnServerResponse(500, e.getMessage());
+                        }
+                    });
+                } finally {
+                    If (conn != null) conn.disconnect();
+                }
+            }
+        });
+    }
+
+    Private String lireFlux(InputStream is) throws IOException {
+        If (is == null) return "";
+        BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String ligne;
+        While ((ligne = reader.readLine()) != null) {
+            Sb.append(ligne);
+        }
+        Reader.close();
+        Return sb.toString();
+    }
+
+    // =========================================================================
+    // 8. ÉVÉNEMENTS KODULAR
+    // =========================================================================
+
+    @SimpleEvent(description = "Déclenché quand l'utilisateur touche une icône de la barre de navigation.")
+    Public void OnSelected(String id) {
+        EventDispatcher.dispatchEvent(this, "OnSelected", id);
+    }
+
+    @SimpleEvent(description = "Déclenché en cas de problème avec la barre de navigation.")
+    Public void NavBarError(String message) {
+        EventDispatcher.dispatchEvent(this, "NavBarError", message);
+    }
+
+    @SimpleEvent(description = "Déclenché lors du clic sur une carte produit.")
+    Public void OnProductCardClick(String productUid) {
+        EventDispatcher.dispatchEvent(this, "OnProductCardClick", productUid);
+    }
+
+    @SimpleEvent(description = "Déclenché lors du choix d'une catégorie. Renvoie l'ID et le Nom.")
+    Public void OnCategorySelected(String categoryId, String categoryTitle) {
+        EventDispatcher.dispatchEvent(this, "OnCategorySelected", categoryId, categoryTitle);
+    }
+
+    @SimpleEvent(description = "Déclenché lors du clic sur l'avatar du message.")
+    Public void OnAvatarClick(boolean isMe) {
+        EventDispatcher.dispatchEvent(this, "OnAvatarClick", isMe);
+    }
+
+    @SimpleEvent(description = "Déclenché après sélection d'une image.")
+    Public void OnPhotoPicked(String imageUri) {
+        EventDispatcher.dispatchEvent(this, "OnPhotoPicked", imageUri);
+    }
+
+    @SimpleEvent(description = "Déclenché après réponse du serveur.")
+    Public void OnServerResponse(int responseCode, String responseContent) {
+        EventDispatcher.dispatchEvent(this, "OnServerResponse", responseCode, responseContent);
+    }
+}
+
