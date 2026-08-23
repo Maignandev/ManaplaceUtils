@@ -2997,6 +2997,6 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent
                             path
                     )
             );
-        }
+        
     }
-                    }
+                                    
