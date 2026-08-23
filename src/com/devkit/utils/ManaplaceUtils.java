@@ -1,3 +1,4 @@
+
 package com.devkit.utils;
 
 import android.app.Activity;
@@ -18,75 +19,131 @@ import com.google.appinventor.components.runtime.ComponentContainer;
 
 @DesignerComponent(
         version = 2,
-        description = "Manatest - Clavier flottant et agrandissement automatique de conteneur avec TextBox multiligne.",
+        description = "ManaplaceUtils - Clavier flottant et agrandissement automatique de conteneur avec TextBox multiligne.",
         category = ComponentCategory.EXTENSION,
         nonVisible = true
 )
 @SimpleObject(external = true)
-public class Manatest extends AndroidNonvisibleComponent {
+public class ManaplaceUtils extends AndroidNonvisibleComponent {
 
     private final Activity activity;
 
-    public Manatest(ComponentContainer container) {
+    public ManaplaceUtils(ComponentContainer container) {
         super(container.$form());
         this.activity = (Activity) container.$context();
     }
 
-    @SimpleFunction(description = "Attache la zone de saisie au-dessus du clavier de manière flottante.")
+    @SimpleFunction(
+            description = "Attache la zone de saisie au-dessus du clavier de manière flottante."
+    )
     public void AttachFloatingInputWithDynamicHeight(
             final Object inputContainer,
             final Object editTextComponent,
             final int maxHeightPx) {
 
-        if (!(inputContainer instanceof AndroidViewComponent)) return;
+        if (!(inputContainer instanceof AndroidViewComponent)) {
+            return;
+        }
 
-        final View containerView = ((AndroidViewComponent) inputContainer).getView();
-        if (containerView == null) return;
+        final View containerView =
+                ((AndroidViewComponent) inputContainer).getView();
 
-        final View rootView = activity.getWindow().getDecorView().getRootView();
+        if (containerView == null) {
+            return;
+        }
 
-        rootView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-            @Override
-            public void onGlobalLayout() {
-                Rect r = new Rect();
-                rootView.getWindowVisibleDisplayFrame(r);
+        final View rootView =
+                activity.getWindow()
+                        .getDecorView()
+                        .getRootView();
 
-                int screenHeight = rootView.getRootView().getHeight();
-                int keypadHeight = screenHeight - r.bottom;
+        rootView.getViewTreeObserver().addOnGlobalLayoutListener(
+                new ViewTreeObserver.OnGlobalLayoutListener() {
 
-                if (keypadHeight > screenHeight * 0.15) {
-                    containerView.setTranslationY(-keypadHeight);
-                } else {
-                    containerView.setTranslationY(0);
+                    @Override
+                    public void onGlobalLayout() {
+
+                        Rect r = new Rect();
+
+                        rootView.getWindowVisibleDisplayFrame(r);
+
+                        int screenHeight =
+                                rootView.getRootView().getHeight();
+
+                        int keypadHeight =
+                                screenHeight - r.bottom;
+
+                        if (keypadHeight > screenHeight * 0.15) {
+
+                            containerView.setTranslationY(
+                                    -keypadHeight
+                            );
+
+                        } else {
+
+                            containerView.setTranslationY(0);
+                        }
+                    }
                 }
-            }
-        });
+        );
     }
 
-    @SimpleFunction(description = "Force le conteneur (CardView en hauteur automatique) à s'agrandir dynamiquement quand le TextBox multiligne à l'intérieur grandit.")
-    public void EnableAutoGrowWithText(final AndroidViewComponent cardContainer, final AndroidViewComponent editTextComponent) {
-        if (cardContainer == null || editTextComponent == null) return;
+    @SimpleFunction(
+            description = "Force le conteneur à s'agrandir dynamiquement quand le TextBox multiligne à l'intérieur grandit."
+    )
+    public void EnableAutoGrowWithText(
+            final AndroidViewComponent cardContainer,
+            final AndroidViewComponent editTextComponent) {
 
-        final View containerView = cardContainer.getView();
-        View editView = editTextComponent.getView();
+        if (cardContainer == null ||
+                editTextComponent == null) {
+            return;
+        }
 
-        if (!(editView instanceof EditText) || containerView == null) return;
+        final View containerView =
+                cardContainer.getView();
 
-        ((EditText) editView).addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+        final View editView =
+                editTextComponent.getView();
 
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+        if (containerView == null ||
+                !(editView instanceof EditText)) {
+            return;
+        }
 
-            @Override
-            public void afterTextChanged(Editable s) {
-                containerView.requestLayout();
-                View parent = (View) containerView.getParent();
-                if (parent != null) {
-                    parent.requestLayout();
+        ((EditText) editView).addTextChangedListener(
+                new TextWatcher() {
+
+                    @Override
+                    public void beforeTextChanged(
+                            CharSequence s,
+                            int start,
+                            int count,
+                            int after) {
+                    }
+
+                    @Override
+                    public void onTextChanged(
+                            CharSequence s,
+                            int start,
+                            int before,
+                            int count) {
+                    }
+
+                    @Override
+                    public void afterTextChanged(
+                            Editable s) {
+
+                        containerView.requestLayout();
+
+                        View parent =
+                                (View) containerView.getParent();
+
+                        if (parent != null) {
+                            parent.requestLayout();
+                        }
+                    }
                 }
-            }
-        });
+        );
     }
 }
