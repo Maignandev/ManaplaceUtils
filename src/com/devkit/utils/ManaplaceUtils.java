@@ -1204,7 +1204,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             return outputFile.getAbsolutePath();
 
         } catch (Exception e) {
-            e.printStackTrace;
+            e.printStackTrace();
             return imagePath;
         }
     }
