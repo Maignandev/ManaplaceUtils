@@ -62,10 +62,17 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.Socket;
+import java.net.URI;
 import java.net.URL;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+
+import javax.net.ssl.SSLSocketFactory;
+
+import android.util.Base64;
 
 @DesignerComponent(
         version = 12,
@@ -90,6 +97,13 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     private Typeface customTypeface = Typeface.DEFAULT;
     private int radioButtonColor = Color.parseColor("#C01A1A1B");
+
+    // =========================================================================
+    // WEBSOCKET (TEMPS RÉEL) - implémentation maison, sans dépendance externe
+    // =========================================================================
+    private Socket wsSocket;
+    private OutputStream wsOutput;
+    private volatile boolean wsRunning = false;
 
     // =========================================================================
     // 0. BARRE DE NAVIGATION FLOTTANTE
@@ -452,6 +466,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             final String messageText,
             final String timeText,
             final String avatarUrl,
+            final String senderUid,
             final boolean isMe,
             final int bubbleColor,
             final int textColor) {
@@ -503,7 +518,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     avatarCard.setOnClickListener(new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
-                            OnAvatarClick(isMe);
+                            OnAvatarClick(senderUid, isMe);
                         }
                     });
 
@@ -1245,6 +1260,246 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
+    // WEBSOCKET (TEMPS RÉEL - PUSH DEPUIS LE SERVEUR, SANS LIB EXTERNE)
+    // =========================================================================
+
+    @SimpleFunction(description = "Ouvre une connexion WebSocket permanente vers le serveur (ex: ws://tonserveur.com/ws ou wss://...).")
+    public void ConnectWebSocket(final String url) {
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    URI uri = URI.create(url);
+                    String scheme = uri.getScheme() == null ? "ws" : uri.getScheme();
+                    boolean secure = scheme.equalsIgnoreCase("wss");
+                    String host = uri.getHost();
+                    int port = uri.getPort() != -1 ? uri.getPort() : (secure ? 443 : 80);
+                    String path = (uri.getRawPath() == null || uri.getRawPath().isEmpty()) ? "/" : uri.getRawPath();
+                    if (uri.getRawQuery() != null) {
+                        path += "?" + uri.getRawQuery();
+                    }
+
+                    if (secure) {
+                        wsSocket = SSLSocketFactory.getDefault().createSocket(host, port);
+                    } else {
+                        wsSocket = new Socket(host, port);
+                    }
+
+                    wsOutput = wsSocket.getOutputStream();
+                    InputStream input = wsSocket.getInputStream();
+
+                    byte[] keyBytes = new byte[16];
+                    new SecureRandom().nextBytes(keyBytes);
+                    String wsKey = Base64.encodeToString(keyBytes, Base64.NO_WRAP);
+
+                    String request =
+                            "GET " + path + " HTTP/1.1\r\n" +
+                            "Host: " + host + "\r\n" +
+                            "Upgrade: websocket\r\n" +
+                            "Connection: Upgrade\r\n" +
+                            "Sec-WebSocket-Key: " + wsKey + "\r\n" +
+                            "Sec-WebSocket-Version: 13\r\n" +
+                            "\r\n";
+
+                    wsOutput.write(request.getBytes("UTF-8"));
+                    wsOutput.flush();
+
+                    boolean handshakeOk = false;
+                    String line;
+                    boolean firstLine = true;
+                    while ((line = wsReadLine(input)) != null && !line.isEmpty()) {
+                        if (firstLine) {
+                            if (line.contains("101")) {
+                                handshakeOk = true;
+                            }
+                            firstLine = false;
+                        }
+                    }
+
+                    if (!handshakeOk) {
+                        activity.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                OnError("ConnectWebSocket: handshake refusé par le serveur.");
+                            }
+                        });
+                        return;
+                    }
+
+                    wsRunning = true;
+
+                    activity.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            OnWebSocketConnected();
+                        }
+                    });
+
+                    wsReadLoop(input);
+
+                } catch (final Exception e) {
+                    activity.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            OnError("ConnectWebSocket: " + e.getMessage());
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    private String wsReadLine(InputStream input) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        int b;
+        while ((b = input.read()) != -1) {
+            if (b == '\r') continue;
+            if (b == '\n') break;
+            sb.append((char) b);
+        }
+        return sb.toString();
+    }
+
+    private void wsReadLoop(InputStream input) {
+        try {
+            while (wsRunning) {
+                int b0 = input.read();
+                if (b0 == -1) break;
+                int b1 = input.read();
+                if (b1 == -1) break;
+
+                int opcode = b0 & 0x0F;
+                long payloadLen = b1 & 0x7F;
+
+                if (payloadLen == 126) {
+                    payloadLen = ((input.read() & 0xFF) << 8) | (input.read() & 0xFF);
+                } else if (payloadLen == 127) {
+                    payloadLen = 0;
+                    for (int i = 0; i < 8; i++) {
+                        payloadLen = (payloadLen << 8) | (input.read() & 0xFF);
+                    }
+                }
+
+                byte[] payload = new byte[(int) payloadLen];
+                int readTotal = 0;
+                while (readTotal < payload.length) {
+                    int r = input.read(payload, readTotal, payload.length - readTotal);
+                    if (r == -1) break;
+                    readTotal += r;
+                }
+
+                if (opcode == 0x8) {
+                    wsRunning = false;
+                    break;
+                } else if (opcode == 0x9) {
+                    wsSendFrame(0xA, payload);
+                } else if (opcode == 0x1 || opcode == 0x0) {
+                    final String message = new String(payload, "UTF-8");
+                    activity.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            OnWebSocketMessageReceived(message);
+                        }
+                    });
+                }
+            }
+        } catch (Exception e) {
+            if (wsRunning) {
+                activity.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        OnError("WebSocket lecture: erreur de connexion.");
+                    }
+                });
+            }
+        } finally {
+            wsRunning = false;
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    OnWebSocketDisconnected();
+                }
+            });
+        }
+    }
+
+    private synchronized void wsSendFrame(int opcode, byte[] payload) {
+        try {
+            if (wsOutput == null) return;
+
+            byte[] mask = new byte[4];
+            new SecureRandom().nextBytes(mask);
+
+            byte[] masked = new byte[payload.length];
+            for (int i = 0; i < payload.length; i++) {
+                masked[i] = (byte) (payload[i] ^ mask[i % 4]);
+            }
+
+            java.io.ByteArrayOutputStream frame = new java.io.ByteArrayOutputStream();
+            frame.write(0x80 | opcode);
+
+            int len = payload.length;
+            if (len <= 125) {
+                frame.write(0x80 | len);
+            } else if (len <= 65535) {
+                frame.write(0x80 | 126);
+                frame.write((len >> 8) & 0xFF);
+                frame.write(len & 0xFF);
+            } else {
+                frame.write(0x80 | 127);
+                for (int i = 7; i >= 0; i--) {
+                    frame.write((int) ((len >> (8 * i)) & 0xFF));
+                }
+            }
+
+            frame.write(mask);
+            frame.write(masked);
+
+            wsOutput.write(frame.toByteArray());
+            wsOutput.flush();
+
+        } catch (Exception e) {
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    OnError("Envoi WebSocket échoué.");
+                }
+            });
+        }
+    }
+
+    @SimpleFunction(description = "Envoie des données (JSON) au serveur via la connexion WebSocket ouverte.")
+    public void SendWebSocketMessage(final String json) {
+        if (!wsRunning) {
+            OnError("SendWebSocketMessage: connexion WebSocket fermée.");
+            return;
+        }
+        try {
+            wsSendFrame(0x1, json.getBytes("UTF-8"));
+        } catch (Exception e) {
+            OnError("SendWebSocketMessage: " + e.getMessage());
+        }
+    }
+
+    @SimpleFunction(description = "Ferme la connexion WebSocket.")
+    public void DisconnectWebSocket() {
+        AsynchUtil.runAsynchronously(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wsRunning = false;
+                    if (wsSocket != null) {
+                        wsSocket.close();
+                        wsSocket = null;
+                    }
+                } catch (Exception e) {
+                    // silencieux
+                }
+            }
+        });
+    }
+
+    // =========================================================================
     // 7. REQUÊTES SERVEUR
     // =========================================================================
 
@@ -1351,8 +1606,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     @SimpleEvent(description = "Déclenché lors du clic sur l'avatar du message.")
-    public void OnAvatarClick(boolean isMe) {
-        EventDispatcher.dispatchEvent(this, "OnAvatarClick", isMe);
+    public void OnAvatarClick(String senderUid, boolean isMe) {
+        EventDispatcher.dispatchEvent(this, "OnAvatarClick", senderUid, isMe);
     }
 
     @SimpleEvent(description = "Déclenché après sélection d'une image.")
@@ -1369,4 +1624,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     public void OnError(String message) {
         EventDispatcher.dispatchEvent(this, "OnError", message);
     }
+
+    @SimpleEvent(description = "Déclenché quand la connexion WebSocket est établie avec le serveur.")
+    public void OnWebSocketConnected() {
+        EventDispatcher.dispatchEvent(this, "OnWebSocketConnected");
+    }
+
+    @SimpleEvent(description = "Déclenché quand la connexion WebSocket est fermée.")
+    public void OnWebSocketDisconnected() {
+        EventDispatcher.dispatchEvent(this, "OnWebSocketDisconnected");
+    }
+
+    @SimpleEvent(description = "Déclenché à chaque réception d'un message (JSON) poussé par le serveur via WebSocket.")
+    public void OnWebSocketMessageReceived(String json) {
+        EventDispatcher.dispatchEvent(this, "OnWebSocketMessageReceived", json);
+    }
 }
+
