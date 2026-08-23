@@ -68,8 +68,8 @@ import java.util.Iterator;
 import java.util.List;
 
 @DesignerComponent(
-        version = 10,
-        description = "Extension ManaplaceUtils mise à jour pour Kodular.",
+        version = 11,
+        description = "Extension ManaplaceUtils - corrections: clavier flottant, galerie/permissions, barre de navigation.",
         category = ComponentCategory.EXTENSION,
         nonVisible = true
 )
@@ -85,8 +85,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     private final Context context;
     private final Activity activity;
     private final Form monForm;
+    private final int requestCode;
     private Dialog activeAlphaDialog;
-    private final int PICK_IMAGE_REQUEST = 1001;
 
     private Typeface customTypeface = Typeface.DEFAULT;
     private int radioButtonColor = Color.parseColor("#C01A1A1B");
@@ -109,7 +109,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         this.context = container.$context();
         this.activity = (Activity) container.$context();
         this.monForm = container.$form();
-        this.form.registerForActivityResult(this);
+        this.requestCode = this.form.registerForActivityResult(this);
     }
 
     private float dpToPx(int dp) {
@@ -126,7 +126,6 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             NavBarError("Id déjà utilisé: " + id);
             return;
         }
-
         idsEnAttente.add(id);
         iconesEnAttente.add(icon);
     }
@@ -144,122 +143,82 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             @Override
             public void run() {
                 try {
-                    final FrameLayout root = (FrameLayout) activity.findViewById(android.R.id.content);
-
+                    FrameLayout root = (FrameLayout) activity.findViewById(android.R.id.content);
                     if (root == null) {
                         NavBarError("Écran racine introuvable");
                         return;
                     }
 
-                    root.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
+                    DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
+                    int largeurFinale = (largeurPourcent > 0)
+                            ? (int) (metrics.widthPixels * (largeurPourcent / 100.0))
+                            : ViewGroup.LayoutParams.WRAP_CONTENT;
+                    int hauteurFinale = (hauteurPourcent > 0)
+                            ? (int) (metrics.heightPixels * (hauteurPourcent / 100.0))
+                            : (int) dpToPx(64);
 
-                                int largeurFinale = (largeurPourcent > 0)
-                                        ? (int) (metrics.widthPixels * (largeurPourcent / 100.0))
-                                        : ViewGroup.LayoutParams.WRAP_CONTENT;
+                    LinearLayout bar = new LinearLayout(activity);
+                    bar.setOrientation(LinearLayout.HORIZONTAL);
+                    bar.setGravity(Gravity.CENTER);
+                    bar.setWeightSum(idsEnAttente.size());
+                    bar.setElevation(dpToPx(12));
 
-                                int hauteurFinale = (hauteurPourcent > 0)
-                                        ? (int) (metrics.heightPixels * (hauteurPourcent / 100.0))
-                                        : (int) dpToPx(64);
+                    GradientDrawable fond = new GradientDrawable();
+                    fond.setColor(Color.WHITE);
+                    fond.setCornerRadius(dpToPx(30));
+                    bar.setBackground(fond);
 
-                                LinearLayout bar = new LinearLayout(activity);
-                                bar.setOrientation(LinearLayout.HORIZONTAL);
-                                bar.setGravity(Gravity.CENTER);
-                                bar.setWeightSum(idsEnAttente.size());
+                    for (int i = 0; i < idsEnAttente.size(); i++) {
+                        final String tabId = idsEnAttente.get(i);
+                        String iconFile = iconesEnAttente.get(i);
 
-                                GradientDrawable fond = new GradientDrawable();
-                                fond.setColor(Color.WHITE);
-                                fond.setCornerRadius(dpToPx(30));
-                                bar.setBackground(fond);
+                        FrameLayout conteneur = new FrameLayout(activity);
+                        conteneur.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
-                                for (int i = 0; i < idsEnAttente.size(); i++) {
-                                    final String tabId = idsEnAttente.get(i);
-                                    String iconFile = iconesEnAttente.get(i);
+                        View cercle = new View(activity);
+                        GradientDrawable fondCercle = new GradientDrawable();
+                        fondCercle.setShape(GradientDrawable.OVAL);
+                        fondCercle.setColor(Color.argb(30, 0, 0, 0));
+                        cercle.setBackground(fondCercle);
+                        cercle.setAlpha(0f);
+                        conteneur.addView(cercle, new FrameLayout.LayoutParams((int) dpToPx(46), (int) dpToPx(46), Gravity.CENTER));
 
-                                    FrameLayout conteneur = new FrameLayout(activity);
-                                    LinearLayout.LayoutParams pConteneur = new LinearLayout.LayoutParams(
-                                            0,
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            1f
-                                    );
-                                    conteneur.setLayoutParams(pConteneur);
-
-                                    View cercle = new View(activity);
-                                    GradientDrawable fondCercle = new GradientDrawable();
-                                    fondCercle.setShape(GradientDrawable.OVAL);
-                                    fondCercle.setColor(Color.argb(30, 0, 0, 0));
-                                    cercle.setBackground(fondCercle);
-                                    cercle.setAlpha(0f);
-
-                                    FrameLayout.LayoutParams pCercle = new FrameLayout.LayoutParams(
-                                            (int) dpToPx(46),
-                                            (int) dpToPx(46),
-                                            Gravity.CENTER
-                                    );
-                                    conteneur.addView(cercle, pCercle);
-
-                                    ImageView img = new ImageView(activity);
-                                    img.setAdjustViewBounds(true);
-
-                                    try {
-                                        Drawable d = MediaUtil.getBitmapDrawable(monForm, iconFile);
-                                        img.setImageDrawable(d);
-                                        img.setColorFilter(
-                                                new PorterDuffColorFilter(
-                                                        Color.rgb(150, 150, 150),
-                                                        PorterDuff.Mode.SRC_IN
-                                                )
-                                        );
-                                    } catch (IOException e) {
-                                        NavBarError("Icône introuvable: " + iconFile);
-                                    }
-
-                                    int taillePx = (int) dpToPx(tailleIconeDp);
-                                    FrameLayout.LayoutParams pImg = new FrameLayout.LayoutParams(
-                                            taillePx,
-                                            taillePx,
-                                            Gravity.CENTER
-                                    );
-                                    conteneur.addView(img, pImg);
-
-                                    final View cercleFinal = cercle;
-                                    final ImageView imgFinal = img;
-
-                                    conteneur.setOnClickListener(new View.OnClickListener() {
-                                        @Override
-                                        public void onClick(View v) {
-                                            SelectionnerOnglet(tabId, cercleFinal, imgFinal);
-                                        }
-                                    });
-
-                                    vuesIcones.add(img);
-                                    vuesCercles.add(cercle);
-                                    idsFinaux.add(tabId);
-
-                                    bar.addView(conteneur);
-                                }
-
-                                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                                        largeurFinale,
-                                        hauteurFinale
-                                );
-                                params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-                                params.setMargins(0, 0, 0, (int) dpToPx(margeBas));
-
-                                root.addView(bar, params);
-                                dejaInitialise = true;
-
-                            } catch (Exception e) {
-                                NavBarError("Erreur initialisation bar: " + e.getMessage());
-                            }
+                        ImageView img = new ImageView(activity);
+                        img.setAdjustViewBounds(true);
+                        try {
+                            Drawable d = MediaUtil.getBitmapDrawable(monForm, iconFile);
+                            img.setImageDrawable(d);
+                            img.setColorFilter(new PorterDuffColorFilter(Color.rgb(150, 150, 150), PorterDuff.Mode.SRC_IN));
+                        } catch (IOException e) {
+                            NavBarError("Icône introuvable: " + iconFile);
                         }
-                    });
+                        int taillePx = (int) dpToPx(tailleIconeDp);
+                        conteneur.addView(img, new FrameLayout.LayoutParams(taillePx, taillePx, Gravity.CENTER));
+
+                        final View cercleFinal = cercle;
+                        final ImageView imgFinal = img;
+                        conteneur.setOnClickListener(new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                SelectionnerOnglet(tabId, cercleFinal, imgFinal);
+                            }
+                        });
+
+                        vuesIcones.add(img);
+                        vuesCercles.add(cercle);
+                        idsFinaux.add(tabId);
+                        bar.addView(conteneur);
+                    }
+
+                    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(largeurFinale, hauteurFinale);
+                    params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+                    params.setMargins(0, 0, 0, (int) dpToPx(margeBas));
+
+                    root.addView(bar, params);
+                    dejaInitialise = true;
 
                 } catch (Exception e) {
-                    NavBarError("Erreur inattendue: " + e.getMessage());
+                    NavBarError("NavBarInitialize: " + e.getMessage());
                 }
             }
         });
@@ -484,7 +443,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
-    // 1. MOTEUR DE CHAT DYNAMIQUE NATIVE
+    // 1. MOTEUR DE CHAT DYNAMIQUE NATIF
     // =========================================================================
 
     @SimpleFunction(description = "Ajoute une bulle de chat avec un petit avatar rond.")
@@ -645,21 +604,22 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
-    // 2. SAISIE FLOTTANTE & CLAVIER (CORRIGÉ & DYNAMIQUE)
+    // 2. SAISIE FLOTTANTE & CLAVIER (CORRIGÉ)
     // =========================================================================
 
     @SimpleFunction(description = "Attache le conteneur de saisie au clavier et adapte dynamiquement la hauteur de la TextBox selon les lignes tapées.")
     public void AttachFloatingInputWithDynamicHeight(
-            final AndroidViewComponent inputContainer,
-            final TextBoxBase textBoxComponent,
+            final Object inputContainer,
+            final Object editTextComponent,
             final int maxHeightPx) {
 
-        if (inputContainer == null || textBoxComponent == null) return;
+        if (!(inputContainer instanceof AndroidViewComponent)) return;
+        final View container = ((AndroidViewComponent) inputContainer).getView();
+        if (container == null) return;
 
-        final View container = inputContainer.getView();
-        View textDbView = textBoxComponent.getView();
-
-        if (container == null || !(textDbView instanceof EditText)) return;
+        if (!(editTextComponent instanceof AndroidViewComponent)) return;
+        View textDbView = ((AndroidViewComponent) editTextComponent).getView();
+        if (!(textDbView instanceof EditText)) return;
 
         final EditText editText = (EditText) textDbView;
         final View root = activity.getWindow().getDecorView().getRootView();
@@ -668,8 +628,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         editText.setHorizontallyScrolling(false);
 
         ViewGroup.LayoutParams params = editText.getLayoutParams();
-        params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-        editText.setLayoutParams(params);
+        if (params != null) {
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            editText.setLayoutParams(params);
+        }
 
         editText.addTextChangedListener(new TextWatcher() {
             @Override
@@ -707,7 +669,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
-    // 3. CATALOGUE DE PRODUITS 2x2 NATIVE
+    // 3. CATALOGUE DE PRODUITS 2x2 NATIF
     // =========================================================================
 
     @SimpleFunction(description = "Construit la grille de produits depuis un JSON sans élévation.")
@@ -1133,32 +1095,54 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
-    // 6. GALERIE D'IMAGES & COMPRESSION
+    // 6. GALERIE D'IMAGES & COMPRESSION (CORRIGÉ)
     // =========================================================================
 
-    @SimpleFunction(description = "Ouvre la galerie d'images native.")
+    @SimpleFunction(description = "Ouvre la galerie d'images native, avec demande de permission.")
     public void OpenPhotoPicker() {
-        activity.runOnUiThread(new Runnable() {
+        String permission;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permission = "android.permission.READ_MEDIA_IMAGES";
+        } else {
+            permission = "android.permission.READ_EXTERNAL_STORAGE";
+        }
+
+        form.askPermission(permission, new PermissionResultHandler() {
             @Override
-            public void run() {
-                try {
-                    Intent intent = new Intent(Intent.ACTION_PICK);
-                    intent.setType("image/*");
-                    activity.startActivityForResult(intent, PICK_IMAGE_REQUEST);
-                } catch (Exception e) {
-                    e.printStackTrace();
+            public void HandlePermissionResponse(String permissionName, boolean granted) {
+                if (!granted) {
+                    OnError("Permission refusée.");
+                    return;
                 }
+                activity.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            Intent intent = new Intent(Intent.ACTION_PICK);
+                            intent.setType("image/*");
+                            form.startActivityForResult(intent, requestCode);
+                        } catch (Exception e) {
+                            OnError("OpenPhotoPicker: " + e.getMessage());
+                        }
+                    }
+                });
             }
         });
     }
 
     @Override
-    public void resultReturned(int requestCode, int resultCode, Intent data) {
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
+    public void resultReturned(int receivedRequestCode, int resultCode, Intent data) {
+        if (receivedRequestCode != requestCode) return;
+
+        if (resultCode == Activity.RESULT_OK && data != null) {
             Uri selectedImageUri = data.getData();
             if (selectedImageUri != null) {
                 OnPhotoPicked(selectedImageUri.toString());
+            } else {
+                OnError("URI nulle.");
             }
+        } else {
+            OnError("Sélection annulée.");
         }
     }
 
@@ -1329,5 +1313,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     public void OnServerResponse(int responseCode, String responseContent) {
         EventDispatcher.dispatchEvent(this, "OnServerResponse", responseCode, responseContent);
     }
-}
 
+    @SimpleEvent(description = "Déclenché en cas de problème (permission, sélection...).")
+    public void OnError(String message) {
+        EventDispatcher.dispatchEvent(this, "OnError", message);
+    }
+                                                    }
