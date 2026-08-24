@@ -117,6 +117,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     private final List<View> vuesCercles = new ArrayList<>();
     private final List<String> idsFinaux = new ArrayList<>();
     private String idSelectionne = null;
+    private View navBarView = null;
 
     public ManaplaceUtils(ComponentContainer container) {
         super(container.$form());
@@ -175,10 +176,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     bar.setOrientation(LinearLayout.HORIZONTAL);
                     bar.setGravity(Gravity.CENTER);
                     bar.setWeightSum(idsEnAttente.size());
-
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        bar.setElevation(0f);
-                    }
+                    bar.setElevation(dpToPx(8));
 
                     GradientDrawable fond = new GradientDrawable();
                     fond.setColor(Color.WHITE);
@@ -232,6 +230,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     params.setMargins(0, 0, 0, (int) dpToPx(margeBas));
 
                     root.addView(bar, params);
+                    navBarView = bar;
                     dejaInitialise = true;
 
                 } catch (Exception e) {
@@ -285,6 +284,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         }
 
         SelectionnerOnglet(id, vuesCercles.get(index), vuesIcones.get(index));
+    }
+
+    @SimpleFunction(description = "Affiche ou masque la barre de navigation (utile pour les pages qui n'en ont pas besoin, sans la détruire).")
+    public void NavBarSetVisible(final boolean visible) {
+        if (navBarView == null) {
+            NavBarError("NavBarSetVisible: la barre n'est pas encore initialisée.");
+            return;
+        }
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                navBarView.setVisibility(visible ? View.VISIBLE : View.GONE);
+            }
+        });
     }
 
     private void SelectionnerOnglet(String id, View cercle, ImageView img) {
@@ -801,8 +814,6 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                     cardParams.setMargins(10, 8, 10, 8);
                                     card.setLayoutParams(cardParams);
                                     card.setRadius(20f);
-                                    card.setCardElevation(0f);
-                                    card.setMaxCardElevation(0f);
                                     card.setCardBackgroundColor(Color.WHITE);
 
                                     LinearLayout inner = new LinearLayout(context);
