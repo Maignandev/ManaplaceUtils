@@ -176,6 +176,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     bar.setGravity(Gravity.CENTER);
                     bar.setWeightSum(idsEnAttente.size());
 
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        bar.setElevation(0f);
+                    }
+
                     GradientDrawable fond = new GradientDrawable();
                     fond.setColor(Color.WHITE);
                     fond.setCornerRadius(dpToPx(30));
@@ -797,6 +801,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                     cardParams.setMargins(10, 8, 10, 8);
                                     card.setLayoutParams(cardParams);
                                     card.setRadius(20f);
+                                    card.setCardElevation(0f);
+                                    card.setMaxCardElevation(0f);
                                     card.setCardBackgroundColor(Color.WHITE);
 
                                     LinearLayout inner = new LinearLayout(context);
