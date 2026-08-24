@@ -175,7 +175,6 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     bar.setOrientation(LinearLayout.HORIZONTAL);
                     bar.setGravity(Gravity.CENTER);
                     bar.setWeightSum(idsEnAttente.size());
-                    bar.setElevation(dpToPx(12));
 
                     GradientDrawable fond = new GradientDrawable();
                     fond.setColor(Color.WHITE);
