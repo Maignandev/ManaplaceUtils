@@ -816,6 +816,13 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                     card.setRadius(20f);
                                     card.setCardBackgroundColor(Color.WHITE);
 
+                                    // DESACTIVATION TOTALE DE L'ELEVATION ET DE L'OMBRE
+                                    card.setCardElevation(0f);
+                                    card.setMaxCardElevation(0f);
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                        card.setOutlineProvider(null);
+                                    }
+
                                     LinearLayout inner = new LinearLayout(context);
                                     inner.setOrientation(LinearLayout.VERTICAL);
                                     inner.setBackgroundColor(Color.WHITE);
@@ -1656,4 +1663,3 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         EventDispatcher.dispatchEvent(this, "OnWebSocketMessageReceived", json);
     }
 }
-
