@@ -4,6 +4,7 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -23,8 +24,10 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -72,11 +75,9 @@ import java.util.List;
 
 import javax.net.ssl.SSLSocketFactory;
 
-import android.util.Base64;
-
 @DesignerComponent(
-        version = 13,
-        description = "Extension ManaplaceUtils - Réutilisation multiple des blocs autorisée sur un même Screen.",
+        version = 14,
+        description = "Extension ManaplaceUtils - corrections: clavier flottant, auto-grow, galerie/permissions, barre de navigation, réutilisation multiple sans conflit parent/dialogue.",
         category = ComponentCategory.EXTENSION,
         nonVisible = true
 )
@@ -93,21 +94,25 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     private final Activity activity;
     private final Form monForm;
     private final int requestCode;
+    
     private Dialog activeAlphaDialog;
+    private View activeDialogContentView;
 
     private Typeface customTypeface = Typeface.DEFAULT;
     private int radioButtonColor = Color.parseColor("#C01A1A1B");
 
     // =========================================================================
-    // WEBSOCKET
+    // WEBSOCKET (TEMPS RÉEL) - implémentation maison, sans dépendance externe
     // =========================================================================
     private Socket wsSocket;
     private OutputStream wsOutput;
     private volatile boolean wsRunning = false;
 
     // =========================================================================
-    // BARRE DE NAVIGATION FLOTTANTE (STRUCTURES AUTORISANT LES APPELS MULTIPLES)
+    // 0. BARRE DE NAVIGATION FLOTTANTE
     // =========================================================================
+
+    private boolean dejaInitialise = false;
     private int tailleIconeDp = 26;
     private final List<String> idsEnAttente = new ArrayList<>();
     private final List<String> iconesEnAttente = new ArrayList<>();
@@ -133,51 +138,30 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    @SimpleFunction(description = "Ajoute une icône à la barre de navigation. Peut être appelé autant de fois que vous le souhaitez.")
+    @SimpleFunction(description = "Ajoute une icône à la barre de navigation. À appeler une fois par icône, avant NavBarInitialize.")
     public void NavBarAdd(String id, String icon) {
-        // Remplace l'icône si l'ID existe déjà au lieu de lever une erreur bloquante
         if (idsEnAttente.contains(id)) {
-            int index = idsEnAttente.indexOf(id);
-            iconesEnAttente.set(index, icon);
-        } else {
-            idsEnAttente.add(id);
-            iconesEnAttente.add(icon);
+            NavBarError("Id déjà utilisé: " + id);
+            return;
         }
+        idsEnAttente.add(id);
+        iconesEnAttente.add(icon);
     }
 
-    @SimpleFunction(description = "Réinitialise ou met à jour la barre flottante dynamique.")
-    public void NavBarClear() {
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (navBarView != null && navBarView.getParent() != null) {
-                        ((ViewGroup) navBarView.getParent()).removeView(navBarView);
-                    }
-                } catch (Exception ignored) {}
-                navBarView = null;
-                idsEnAttente.clear();
-                iconesEnAttente.clear();
-                vuesIcones.clear();
-                vuesCercles.clear();
-                idsFinaux.clear();
-                idSelectionne = null;
-            }
-        });
-    }
-
-    @SimpleFunction(description = "Construit et affiche la barre flottante. Permet une re-création complète sans blocage.")
+    @SimpleFunction(description = "Construit et affiche la barre flottante avec toutes les icônes ajoutées via NavBarAdd.")
     public void NavBarInitialize(final int margeBas, final double largeurPourcent, final double hauteurPourcent) {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 try {
                     FrameLayout root = (FrameLayout) activity.findViewById(android.R.id.content);
-                    if (root == null) return;
+                    if (root == null) {
+                        NavBarError("Écran racine introuvable");
+                        return;
+                    }
 
-                    // Si une barre existe déjà, on la retire proprement pour éviter les doublons
-                    if (navBarView != null && navBarView.getParent() != null) {
-                        ((ViewGroup) navBarView.getParent()).removeView(navBarView);
+                    if (navBarView != null && root.indexOfChild(navBarView) != -1) {
+                        root.removeView(navBarView);
                     }
 
                     vuesIcones.clear();
@@ -185,7 +169,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     idsFinaux.clear();
                     idSelectionne = null;
 
-                    if (idsEnAttente.isEmpty()) return;
+                    if (idsEnAttente.isEmpty()) {
+                        NavBarError("Aucune icône ajoutée — appelle NavBarAdd avant NavBarInitialize");
+                        return;
+                    }
 
                     DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
                     int largeurFinale = (largeurPourcent > 0)
@@ -254,6 +241,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                     root.addView(bar, params);
                     navBarView = bar;
+                    dejaInitialise = true;
 
                 } catch (Exception e) {
                     NavBarError("NavBarInitialize: " + e.getMessage());
@@ -262,7 +250,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Ajuste la taille de toutes les icônes de la barre en dp.")
+    @SimpleFunction(description = "Ajuste la taille de toutes les icônes de la barre en dp, avec une transition animée.")
     public void NavBarSetIconSize(final int tailleDp) {
         final int ancienneTailleDp = tailleIconeDp;
         tailleIconeDp = tailleDp;
@@ -296,16 +284,24 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         }
     }
 
-    @SimpleFunction(description = "Sélectionne un onglet par code.")
+    @SimpleFunction(description = "Sélectionne un onglet de la barre par code, sans clic.")
     public void NavBarSelect(String id) {
         int index = idsFinaux.indexOf(id);
-        if (index < 0) return;
+
+        if (index < 0) {
+            NavBarError("Id introuvable pour NavBarSelect: " + id);
+            return;
+        }
+
         SelectionnerOnglet(id, vuesCercles.get(index), vuesIcones.get(index));
     }
 
-    @SimpleFunction(description = "Affiche ou masque la barre de navigation.")
+    @SimpleFunction(description = "Affiche ou masque la barre de navigation (utile pour les pages qui n'en ont pas besoin, sans la détruire).")
     public void NavBarSetVisible(final boolean visible) {
-        if (navBarView == null) return;
+        if (navBarView == null) {
+            NavBarError("NavBarSetVisible: la barre n'est pas encore initialisée.");
+            return;
+        }
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -371,7 +367,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // POLICE PERSONNALISÉE
     // =========================================================================
 
-    @SimpleFunction(description = "Charge une police personnalisée.")
+    @SimpleFunction(description = "Charge une police personnalisée .ttf ou .otf.")
     public void LoadCustomFont(String fontPath) {
         try {
             if (fontPath == null || fontPath.trim().isEmpty()) {
@@ -385,6 +381,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                 customTypeface = Typeface.createFromAsset(context.getAssets(), fontPath);
             }
         } catch (Exception e) {
+            e.printStackTrace();
             customTypeface = Typeface.DEFAULT;
         }
     }
@@ -489,7 +486,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 1. MOTEUR DE CHAT DYNAMIQUE NATIF
     // =========================================================================
 
-    @SimpleFunction(description = "Ajoute une bulle de chat.")
+    @SimpleFunction(description = "Ajoute une bulle de chat avec un petit avatar rond.")
     public void AddChatBubble(
             final AndroidViewComponent chatContainer,
             final String messageText,
@@ -628,7 +625,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Fait défiler le ScrollArrangement vers le bas.")
+    @SimpleFunction(description = "Fait défiler le ScrollArrangement jusqu'au tout dernier message.")
     public void ScrollToBottom(final AndroidViewComponent scrollContainer) {
         activity.runOnUiThread(new Runnable() {
             @Override
@@ -651,30 +648,54 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 2. SAISIE FLOTTANTE & CLAVIER
     // =========================================================================
 
-    @SimpleFunction(description = "Attache la zone de saisie au-dessus du clavier.")
+    @SimpleFunction(
+            description = "Attache la zone de saisie au-dessus du clavier de manière flottante."
+    )
     public void AttachFloatingInputWithDynamicHeight(
             final Object inputContainer,
             final Object editTextComponent,
             final int maxHeightPx) {
 
-        if (!(inputContainer instanceof AndroidViewComponent)) return;
-        final View containerView = ((AndroidViewComponent) inputContainer).getView();
-        if (containerView == null) return;
+        if (!(inputContainer instanceof AndroidViewComponent)) {
+            return;
+        }
 
-        final View rootView = activity.getWindow().getDecorView().getRootView();
+        final View containerView =
+                ((AndroidViewComponent) inputContainer).getView();
+
+        if (containerView == null) {
+            return;
+        }
+
+        final View rootView =
+                activity.getWindow()
+                        .getDecorView()
+                        .getRootView();
 
         rootView.getViewTreeObserver().addOnGlobalLayoutListener(
                 new ViewTreeObserver.OnGlobalLayoutListener() {
+
                     @Override
                     public void onGlobalLayout() {
+
                         Rect r = new Rect();
+
                         rootView.getWindowVisibleDisplayFrame(r);
-                        int screenHeight = rootView.getRootView().getHeight();
-                        int keypadHeight = screenHeight - r.bottom;
+
+                        int screenHeight =
+                                rootView.getRootView().getHeight();
+
+                        int keypadHeight =
+                                screenHeight - r.bottom;
 
                         if (keypadHeight > screenHeight * 0.15) {
-                            containerView.setTranslationY(-keypadHeight);
+
+                            containerView.setTranslationY(
+                                    -keypadHeight
+                            );
+
                         } else {
+
                             containerView.setTranslationY(0);
                         }
                     }
@@ -682,30 +703,57 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         );
     }
 
-    @SimpleFunction(description = "Agrandit le conteneur quand le champ de texte s'agrandit.")
+    @SimpleFunction(
+            description = "Force le conteneur à s'agrandir dynamiquement quand le TextBox multiligne à l'intérieur grandit."
+    )
     public void EnableAutoGrowWithText(
             final AndroidViewComponent cardContainer,
             final AndroidViewComponent editTextComponent) {
 
-        if (cardContainer == null || editTextComponent == null) return;
+        if (cardContainer == null ||
+                editTextComponent == null) {
+            return;
+        }
 
-        final View containerView = cardContainer.getView();
-        final View editView = editTextComponent.getView();
+        final View containerView =
+                cardContainer.getView();
 
-        if (containerView == null || !(editView instanceof EditText)) return;
+        final View editView =
+                editTextComponent.getView();
+
+        if (containerView == null ||
+                !(editView instanceof EditText)) {
+            return;
+        }
 
         ((EditText) editView).addTextChangedListener(
                 new TextWatcher() {
-                    @Override
-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
                     @Override
-                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    public void beforeTextChanged(
+                            CharSequence s,
+                            int start,
+                            int count,
+                            int after) {
+                    }
 
                     @Override
-                    public void afterTextChanged(Editable s) {
+                    public void onTextChanged(
+                            CharSequence s,
+                            int start,
+                            int before,
+                            int count) {
+                    }
+
+                    @Override
+                    public void afterTextChanged(
+                            Editable s) {
+
                         containerView.requestLayout();
-                        View parent = (View) containerView.getParent();
+
+                        View parent =
+                                (View) containerView.getParent();
+
                         if (parent != null) {
                             parent.requestLayout();
                         }
@@ -718,7 +766,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 3. CATALOGUE DE PRODUITS 2x2 NATIF
     // =========================================================================
 
-    @SimpleFunction(description = "Construit la grille de produits. Peut être exécuté plusieurs fois dynamiquement.")
+    @SimpleFunction(description = "Construit la grille de produits depuis un JSON sans élévation.")
     public void BuildProductGridFromJson(
             final AndroidViewComponent scrollContainer,
             final String jsonData) {
@@ -860,7 +908,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 3B. LISTE DYNAMIQUE DE CATÉGORIES
     // =========================================================================
 
-    @SimpleFunction(description = "Génère la liste des catégories depuis un JSON.")
+    @SimpleFunction(description = "Génère la liste des catégories/sous-catégories depuis un JSON.")
     public void BuildCategoryListFromJson(
             final AndroidViewComponent listContainer,
             final String categoriesJson) {
@@ -966,7 +1014,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 4. EFFETS VISUELS
     // =========================================================================
 
-    @SimpleFunction(description = "Applique un dégradé de couleur.")
+    @SimpleFunction(description = "Applique un dégradé de couleur sur un composant.")
     public void SetGradientBackground(
             final AndroidViewComponent component,
             final int startColor,
@@ -997,7 +1045,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Applique un effet de flou.")
+    @SimpleFunction(description = "Applique un effet de flou (Glassmorphism) sur un composant.")
     public void SetBlurEffect(final AndroidViewComponent component, final float radius) {
         activity.runOnUiThread(new Runnable() {
             @Override
@@ -1028,7 +1076,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 5. DIALOGUE TRANSPARENT, NOTIFICATION & GESTION SONORE
     // =========================================================================
 
-    @SimpleFunction(description = "Affiche un dialogue transparent.")
+    @SimpleFunction(description = "Affiche un composant sous forme de dialogue transparent. Détache automatiquement le composant de son ancien parent.")
     public void ShowAlphaDialog(
             final AndroidViewComponent dialogContentLayout,
             final boolean cancelable) {
@@ -1037,18 +1085,25 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             @Override
             public void run() {
                 try {
-                    if (activeAlphaDialog != null && activeAlphaDialog.isShowing()) {
-                        activeAlphaDialog.dismiss();
+                    // Ferme le dialogue précédant s'il existe
+                    DismissAlphaDialog();
+
+                    if (dialogContentLayout == null || dialogContentLayout.getView() == null) {
+                        return;
                     }
 
-                    activeAlphaDialog = new Dialog(activity);
-                    activeAlphaDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+                    final View contentView = dialogContentLayout.getView();
 
-                    View contentView = dialogContentLayout.getView();
+                    // Détachement explicite du parent d'origine si déjà assigné
                     if (contentView.getParent() != null) {
                         ((ViewGroup) contentView.getParent()).removeView(contentView);
                     }
 
+                    contentView.setVisibility(View.VISIBLE);
+                    activeDialogContentView = contentView;
+
+                    activeAlphaDialog = new Dialog(activity);
+                    activeAlphaDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
                     activeAlphaDialog.setContentView(contentView);
 
                     if (activeAlphaDialog.getWindow() != null) {
@@ -1060,6 +1115,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     }
 
                     activeAlphaDialog.setCancelable(cancelable);
+
+                    // Nettoyage automatique du parent lors de la fermeture
+                    activeAlphaDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                        @Override
+                        public void onDismiss(DialogInterface dialog) {
+                            if (contentView.getParent() != null) {
+                                ((ViewGroup) contentView.getParent()).removeView(contentView);
+                            }
+                            if (activeDialogContentView == contentView) {
+                                activeDialogContentView = null;
+                            }
+                        }
+                    });
+
                     activeAlphaDialog.show();
 
                 } catch (Exception e) {
@@ -1069,14 +1138,26 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Ferme le dialogue Alpha.")
+    @SimpleFunction(description = "Ferme le dialogue Alpha et libère son conteneur.")
     public void DismissAlphaDialog() {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if (activeAlphaDialog != null && activeAlphaDialog.isShowing()) {
-                    activeAlphaDialog.dismiss();
-                    activeAlphaDialog = null;
+                try {
+                    if (activeAlphaDialog != null) {
+                        if (activeAlphaDialog.isShowing()) {
+                            activeAlphaDialog.dismiss();
+                        }
+                        activeAlphaDialog = null;
+                    }
+                    if (activeDialogContentView != null) {
+                        if (activeDialogContentView.getParent() != null) {
+                            ((ViewGroup) activeDialogContentView.getParent()).removeView(activeDialogContentView);
+                        }
+                        activeDialogContentView = null;
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
         });
@@ -1088,7 +1169,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             @Override
             public void run() {
                 ShowAlphaDialog(customLayout, true);
-                new Handler().postDelayed(new Runnable() {
+                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         DismissAlphaDialog();
@@ -1098,7 +1179,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Joue un son personnalisé.")
+    @SimpleFunction(description = "Joue un son personnalisé (ex: envoi de message, notification).")
     public void PlayCustomSound(final String fileNameOrPath) {
         AsynchUtil.runAsynchronously(new Runnable() {
             @Override
@@ -1148,7 +1229,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 6. GALERIE D'IMAGES & COMPRESSION
     // =========================================================================
 
-    @SimpleFunction(description = "Ouvre la galerie d'images native.")
+    @SimpleFunction(description = "Ouvre la galerie d'images native, avec demande de permission.")
     public void OpenPhotoPicker() {
         String permission;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -1196,7 +1277,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         }
     }
 
-    @SimpleFunction(description = "Compresse une image.")
+    @SimpleFunction(description = "Compresse une image sans surcharger la mémoire.")
     public String CompressImage(String imagePath, int quality, int maxWidth) {
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
@@ -1244,19 +1325,15 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
-    // WEBSOCKET
+    // WEBSOCKET (TEMPS RÉEL - PUSH DEPUIS LE SERVEUR, SANS LIB EXTERNE)
     // =========================================================================
 
-    @SimpleFunction(description = "Ouvre une connexion WebSocket.")
+    @SimpleFunction(description = "Ouvre une connexion WebSocket permanente vers le serveur (ex: ws://tonserveur.com/ws ou wss://...).")
     public void ConnectWebSocket(final String url) {
         AsynchUtil.runAsynchronously(new Runnable() {
             @Override
             public void run() {
                 try {
-                    if (wsSocket != null && !wsSocket.isClosed()) {
-                        wsSocket.close();
-                    }
-
                     URI uri = URI.create(url);
                     String scheme = uri.getScheme() == null ? "ws" : uri.getScheme();
                     boolean secure = scheme.equalsIgnoreCase("wss");
@@ -1456,7 +1533,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         }
     }
 
-    @SimpleFunction(description = "Envoie des données via le WebSocket.")
+    @SimpleFunction(description = "Envoie des données (JSON) au serveur via la connexion WebSocket ouverte.")
     public void SendWebSocketMessage(final String json) {
         if (!wsRunning) {
             OnError("SendWebSocketMessage: connexion WebSocket fermée.");
@@ -1480,7 +1557,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                         wsSocket.close();
                         wsSocket = null;
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    // silencieux
+                }
             }
         });
     }
@@ -1571,7 +1650,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 8. ÉVÉNEMENTS KODULAR
     // =========================================================================
 
-    @SimpleEvent(description = "Déclenché quand l'utilisateur touche une icône.")
+    @SimpleEvent(description = "Déclenché quand l'utilisateur touche une icône de la barre de navigation.")
     public void OnSelected(String id) {
         EventDispatcher.dispatchEvent(this, "OnSelected", id);
     }
@@ -1586,7 +1665,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         EventDispatcher.dispatchEvent(this, "OnProductCardClick", productUid);
     }
 
-    @SimpleEvent(description = "Déclenché lors du choix d'une catégorie.")
+    @SimpleEvent(description = "Déclenché lors du choix d'une catégorie. Renvoie l'ID et le Nom.")
     public void OnCategorySelected(String categoryId, String categoryTitle) {
         EventDispatcher.dispatchEvent(this, "OnCategorySelected", categoryId, categoryTitle);
     }
@@ -1606,12 +1685,12 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         EventDispatcher.dispatchEvent(this, "OnServerResponse", responseCode, responseContent);
     }
 
-    @SimpleEvent(description = "Déclenché en cas de problème.")
+    @SimpleEvent(description = "Déclenché en cas de problème (permission, sélection...).")
     public void OnError(String message) {
         EventDispatcher.dispatchEvent(this, "OnError", message);
     }
 
-    @SimpleEvent(description = "Déclenché quand la connexion WebSocket est établie.")
+    @SimpleEvent(description = "Déclenché quand la connexion WebSocket est établie avec le serveur.")
     public void OnWebSocketConnected() {
         EventDispatcher.dispatchEvent(this, "OnWebSocketConnected");
     }
@@ -1621,9 +1700,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         EventDispatcher.dispatchEvent(this, "OnWebSocketDisconnected");
     }
 
-    @SimpleEvent(description = "Déclenché à chaque réception d'un message WebSocket.")
+    @SimpleEvent(description = "Déclenché à chaque réception d'un message (JSON) poussé par le serveur via WebSocket.")
     public void OnWebSocketMessageReceived(String json) {
         EventDispatcher.dispatchEvent(this, "OnWebSocketMessageReceived", json);
     }
 }
-
