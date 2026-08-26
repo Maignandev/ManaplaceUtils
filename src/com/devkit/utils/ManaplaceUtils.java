@@ -1705,3 +1705,4 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         EventDispatcher.dispatchEvent(this, "OnWebSocketMessageReceived", json);
     }
 }
+
