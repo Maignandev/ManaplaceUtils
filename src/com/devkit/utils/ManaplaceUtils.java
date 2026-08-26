@@ -4,6 +4,7 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -23,8 +24,10 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -72,11 +75,9 @@ import java.util.List;
 
 import javax.net.ssl.SSLSocketFactory;
 
-import android.util.Base64;
-
 @DesignerComponent(
-        version = 12,
-        description = "Extension ManaplaceUtils - corrections: clavier flottant, auto-grow, galerie/permissions, barre de navigation.",
+        version = 14,
+        description = "Extension ManaplaceUtils - corrections: clavier flottant, auto-grow, galerie/permissions, barre de navigation, réutilisation multiple sans conflit parent/dialogue.",
         category = ComponentCategory.EXTENSION,
         nonVisible = true
 )
@@ -93,7 +94,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     private final Activity activity;
     private final Form monForm;
     private final int requestCode;
+    
     private Dialog activeAlphaDialog;
+    private View activeDialogContentView;
 
     private Typeface customTypeface = Typeface.DEFAULT;
     private int radioButtonColor = Color.parseColor("#C01A1A1B");
@@ -147,13 +150,6 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     @SimpleFunction(description = "Construit et affiche la barre flottante avec toutes les icônes ajoutées via NavBarAdd.")
     public void NavBarInitialize(final int margeBas, final double largeurPourcent, final double hauteurPourcent) {
-        if (dejaInitialise) return;
-
-        if (idsEnAttente.isEmpty()) {
-            NavBarError("Aucune icône ajoutée — appelle NavBarAdd avant NavBarInitialize");
-            return;
-        }
-
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -161,6 +157,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     FrameLayout root = (FrameLayout) activity.findViewById(android.R.id.content);
                     if (root == null) {
                         NavBarError("Écran racine introuvable");
+                        return;
+                    }
+
+                    if (navBarView != null && root.indexOfChild(navBarView) != -1) {
+                        root.removeView(navBarView);
+                    }
+
+                    vuesIcones.clear();
+                    vuesCercles.clear();
+                    idsFinaux.clear();
+                    idSelectionne = null;
+
+                    if (idsEnAttente.isEmpty()) {
+                        NavBarError("Aucune icône ajoutée — appelle NavBarAdd avant NavBarInitialize");
                         return;
                     }
 
@@ -635,7 +645,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     // =========================================================================
-    // 2. SAISIE FLOTTANTE & CLAVIER (REMPLACÉ)
+    // 2. SAISIE FLOTTANTE & CLAVIER
     // =========================================================================
 
     @SimpleFunction(
@@ -816,7 +826,6 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                     card.setRadius(20f);
                                     card.setCardBackgroundColor(Color.WHITE);
 
-                                    // DESACTIVATION TOTALE DE L'ELEVATION ET DE L'OMBRE
                                     card.setCardElevation(0f);
                                     card.setMaxCardElevation(0f);
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -1067,7 +1076,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     // 5. DIALOGUE TRANSPARENT, NOTIFICATION & GESTION SONORE
     // =========================================================================
 
-    @SimpleFunction(description = "Affiche un composant sous forme de dialogue transparent.")
+    @SimpleFunction(description = "Affiche un composant sous forme de dialogue transparent. Détache automatiquement le composant de son ancien parent.")
     public void ShowAlphaDialog(
             final AndroidViewComponent dialogContentLayout,
             final boolean cancelable) {
@@ -1076,18 +1085,25 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             @Override
             public void run() {
                 try {
-                    if (activeAlphaDialog != null && activeAlphaDialog.isShowing()) {
-                        activeAlphaDialog.dismiss();
+                    // Ferme le dialogue précédant s'il existe
+                    DismissAlphaDialog();
+
+                    if (dialogContentLayout == null || dialogContentLayout.getView() == null) {
+                        return;
                     }
 
-                    activeAlphaDialog = new Dialog(activity);
-                    activeAlphaDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+                    final View contentView = dialogContentLayout.getView();
 
-                    View contentView = dialogContentLayout.getView();
+                    // Détachement explicite du parent d'origine si déjà assigné
                     if (contentView.getParent() != null) {
                         ((ViewGroup) contentView.getParent()).removeView(contentView);
                     }
 
+                    contentView.setVisibility(View.VISIBLE);
+                    activeDialogContentView = contentView;
+
+                    activeAlphaDialog = new Dialog(activity);
+                    activeAlphaDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
                     activeAlphaDialog.setContentView(contentView);
 
                     if (activeAlphaDialog.getWindow() != null) {
@@ -1099,6 +1115,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     }
 
                     activeAlphaDialog.setCancelable(cancelable);
+
+                    // Nettoyage automatique du parent lors de la fermeture
+                    activeAlphaDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                        @Override
+                        public void onDismiss(DialogInterface dialog) {
+                            if (contentView.getParent() != null) {
+                                ((ViewGroup) contentView.getParent()).removeView(contentView);
+                            }
+                            if (activeDialogContentView == contentView) {
+                                activeDialogContentView = null;
+                            }
+                        }
+                    });
+
                     activeAlphaDialog.show();
 
                 } catch (Exception e) {
@@ -1108,14 +1138,26 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Ferme le dialogue Alpha.")
+    @SimpleFunction(description = "Ferme le dialogue Alpha et libère son conteneur.")
     public void DismissAlphaDialog() {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if (activeAlphaDialog != null && activeAlphaDialog.isShowing()) {
-                    activeAlphaDialog.dismiss();
-                    activeAlphaDialog = null;
+                try {
+                    if (activeAlphaDialog != null) {
+                        if (activeAlphaDialog.isShowing()) {
+                            activeAlphaDialog.dismiss();
+                        }
+                        activeAlphaDialog = null;
+                    }
+                    if (activeDialogContentView != null) {
+                        if (activeDialogContentView.getParent() != null) {
+                            ((ViewGroup) activeDialogContentView.getParent()).removeView(activeDialogContentView);
+                        }
+                        activeDialogContentView = null;
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
         });
@@ -1127,7 +1169,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             @Override
             public void run() {
                 ShowAlphaDialog(customLayout, true);
-                new Handler().postDelayed(new Runnable() {
+                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         DismissAlphaDialog();
