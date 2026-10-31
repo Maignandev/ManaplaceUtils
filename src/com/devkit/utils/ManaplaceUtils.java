@@ -2845,9 +2845,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                         if (!granted) {
 
-                            OnError(
-                                    "Permission refusée."
-                            );
+                            pickTarget = 0;
+                            OnError("Permission refusée.");
 
                             return;
                         }
@@ -2876,10 +2875,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                                         } catch (Exception e) {
 
-                                            OnError(
-                                                    "OpenPhotoPicker: " +
-                                                            e.getMessage()
-                                            );
+                                            pickTarget = 0;
+                                            OnError("OpenPhotoPicker: " + e.getMessage());
                                         }
                                     }
                                 }
@@ -2897,6 +2894,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
         if (receivedRequestCode != requestCode)
             return;
+        final int pickedFor = pickTarget;
+        pickTarget = 0;
 
         if (resultCode == Activity.RESULT_OK && data != null) {
 
@@ -2904,8 +2903,12 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
             if (selectedImageUri != null) {
 
-                eventImagePicked(selectedImageUri.toString());
-                OnPhotoPicked(selectedImageUri.toString());
+                if (pickedFor == 1) {
+                    eventImagePicked(selectedImageUri.toString());
+                    OnEventImagePicked(selectedImageUri.toString());
+                } else {
+                    OnPhotoPicked(selectedImageUri.toString());
+                }
 
             } else {
 
@@ -4083,7 +4086,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.BOTTOM);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, 0, (int) (sw * 0.02f), 0);
 
         // carte du champ : 82 % de la largeur, coins 30
@@ -4096,16 +4099,16 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         pill.setLayoutParams(plp);
         pill.setMinimumHeight(pillMinH);
         GradientDrawable pbg = new GradientDrawable();
-        pbg.setColor(Color.parseColor("#F5F5F5"));
+        pbg.setColor(Color.BLACK);
         pbg.setCornerRadius(dpToPx(30));
-        pbg.setStroke(dp(1), Color.parseColor("#E6E6E6"));
+        pbg.setStroke(dp(1), Color.parseColor("#9E9E9E"));
         pill.setBackground(pbg);
 
         chatEdit = new EditText(context);
         chatEdit.setBackground(null);
         chatEdit.setHint("Message");
-        chatEdit.setHintTextColor(Color.argb(0x91, 0x1A, 0x1A, 0x1B));
-        chatEdit.setTextColor(Color.argb(0xE9, 0x1A, 0x1A, 0x1B));
+        chatEdit.setHintTextColor(Color.parseColor("#9E9E9E"));
+        chatEdit.setTextColor(Color.WHITE);
         chatEdit.setTextSize(15);
         chatEdit.setTypeface(font);
         chatEdit.setInputType(InputType.TYPE_CLASS_TEXT
@@ -4131,7 +4134,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             @Override
             public void onClick(View v) {
                 OnChatImageIconClick();
-                if (chatIconOpensGallery) OpenPhotoPicker();
+                if (chatIconOpensGallery) {
+                    pickTarget = 0;
+                    OpenPhotoPicker();
+                }
             }
         });
         pill.addView(chatImageIconTv, new FrameLayout.LayoutParams(
@@ -4149,7 +4155,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         chatSendTv.setClickable(true);
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(sendSize, sendSize);
         slp.leftMargin = (int) (sw * 0.015f);
-        slp.bottomMargin = vMargin + Math.max(0, (pillMinH - sendSize) / 2);
+        slp.bottomMargin = 0;
         chatSendTv.setLayoutParams(slp);
         chatSendTv.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -6705,6 +6711,21 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         return v == null ? "" : v;
     }
 
+    // Accepte un vrai caractère Phosphor, ou un code hexadécimal (« e3d2 », « \ue3d2 », « U+E3D2 », « &#xE3D2; »)
+    private String glyph(String s) {
+        if (s == null) return "";
+        String t = s.trim();
+        if (t.isEmpty()) return "";
+        String h = t.replaceFirst("(?i)^(\\\\u|u\\+|&#x|0x)", "").replace(";", "");
+        if (h.length() >= 4 && h.length() <= 6 && h.matches("[0-9a-fA-F]+")) {
+            try {
+                return new String(Character.toChars(Integer.parseInt(h, 16)));
+            } catch (Exception ignored) {
+            }
+        }
+        return t;
+    }
+
     // Retrouve la vraie vue où ajouter les lignes (déroule les enveloppes d'arrangement / défilement)
     private ViewGroup realLayout(AndroidViewComponent component) {
         if (component == null) return null;
@@ -6914,26 +6935,30 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     // =========================================================================
     // SEVEN : ÉCRANS « AJOUTER UN ÉVÉNEMENT » (Gratuit / Premium) ET ABONNEMENT
-    // Design fiche technique V19 : fond #000000, cartes #1A1A1BED, bordure
-    // #9E9E9E 1 px (focus #EEEEEE 2 px), Manrope Medium 13sp, tailles en %.
+    // Espace de 2 % entre les composants, titres 13, sous-titres 12, champs
+    // 8 % x 93 % coins 14, grands titres 18. Couleurs : fiche V19 (inchangées).
     // =========================================================================
     private ViewGroup evContainer;
     private boolean evPremium = false;
     private boolean evSubscribeMode = false;
+    private int pickTarget = 0; // 0 = chat / général, 1 = image du billet
     private String evImageUri = "";
     private ImageView evPreview;
     private LinearLayout evPickHint;
     private EditText evName, evTicket, evCount;
-    private TextView evDate, evTime, evExpiry;
-    private final String[] evVals = new String[6];
+    private TextView evDate, evTime, evExpDate, evExpTime;
+    private final String[] evVals = new String[7];
     private String evSubPrice = "1 $";
     private String evSubPeriod = "mois";
     private String evSubEmail = "";
+    private Typeface evTitleFont, evButtonFont, evIconFont;
+    private String evGlyphImage = "", evGlyphQr = "", evGlyphLock = "";
+    private String evGlyphCheck = "", evGlyphPlay = "", evGlyphInfo = "";
 
     private int evBlack() { return Color.rgb(0, 0, 0); }
     private int evCard() { return Color.argb(0xED, 0x1A, 0x1A, 0x1B); }
     private int evGray() { return Color.rgb(0x9E, 0x9E, 0x9E); }
-    private float evRadius() { return hp(9f) * 0.375f; }
+    private float evRadius() { return dpToPx(14); }
 
     private GradientDrawable evBg(int fill, int strokeDp, int strokeColor, float radius) {
         GradientDrawable g = new GradientDrawable();
@@ -6943,6 +6968,24 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         return g;
     }
 
+    private GradientDrawable evDash(int fill, int strokeColor, float radius) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(fill);
+        g.setCornerRadius(radius);
+        g.setStroke(dp(1), strokeColor, dp(4), dp(3));
+        return g;
+    }
+
+    private View evDashLine() {
+        View v = new View(context);
+        v.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.LINE);
+        g.setStroke(dp(1), evGray(), dp(4), dp(3));
+        v.setBackground(g);
+        return v;
+    }
+
     private LinearLayout.LayoutParams evLp(float wPct, float hPct, float topPct) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 wp(wPct), hPct <= 0 ? LinearLayout.LayoutParams.WRAP_CONTENT : hp(hPct));
@@ -6950,16 +6993,57 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         return lp;
     }
 
-    private TextView evCaption(LinearLayout parent, String s) {
-        TextView t = text(s, 13, evGray(), false);
-        t.setLayoutParams(evLp(88f, 0f, 0.5f));
-        parent.addView(t);
+    private TextView evBig(String s, int sp) {
+        TextView t = text(s, sp, Color.WHITE, true);
+        if (evTitleFont != null) t.setTypeface(evTitleFont);
         return t;
     }
 
-    // Carte cliquable "verrouillée" : un clic ouvre l'offre Premium
+    private TextView evIcon(String glyph, String fallback, int sp, int color) {
+        TextView t = new TextView(context);
+        boolean has = glyph != null && !glyph.isEmpty();
+        String g = has ? glyph : fallback;
+        t.setText(g);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        t.setIncludeFontPadding(false);
+        t.setGravity(Gravity.CENTER);
+        if (has && evIconFont != null) t.setTypeface(evIconFont);
+        if (g.isEmpty()) t.setVisibility(View.GONE);
+        return t;
+    }
+
+    // Titre (13, blanc) + pastille Premium facultative
+    private void evTitleRow(LinearLayout col, String title, String sub, boolean pill) {
+        LinearLayout r = new LinearLayout(context);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setLayoutParams(evLp(93f, 0f, 2f));
+        TextView t = text(title, 13, Color.WHITE, true);
+        t.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        r.addView(t);
+        if (pill) {
+            LinearLayout p = new LinearLayout(context);
+            p.setOrientation(LinearLayout.HORIZONTAL);
+            p.setGravity(Gravity.CENTER_VERTICAL);
+            p.setBackground(evBg(Color.TRANSPARENT, 1, evGray(), dpToPx(30)));
+            p.setPadding(dp(10), dp(4), dp(12), dp(4));
+            TextView lk = evIcon(evGlyphLock, "", 14, Color.WHITE);
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            llp.rightMargin = dp(5);
+            lk.setLayoutParams(llp);
+            p.addView(lk);
+            p.addView(text("Premium", 12, Color.WHITE, true));
+            r.addView(p);
+        }
+        col.addView(r);
+        TextView s = text(sub, 12, evGray(), false);
+        s.setLayoutParams(evLp(93f, 0f, 0.4f));
+        col.addView(s);
+    }
+
     private void evLock(FrameLayout box) {
-        box.setAlpha(0.45f);
         View o = new View(context);
         o.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -6973,14 +7057,18 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     private EditText evEdit(String hint, int inputType, boolean locked, LinearLayout parent, String initial) {
         final FrameLayout box = new FrameLayout(context);
-        final GradientDrawable bg = evBg(evCard(), 1, evGray(), evRadius());
+        final GradientDrawable bg = locked ? evDash(evCard(), evGray(), evRadius())
+                : evBg(evCard(), 1, evGray(), evRadius());
         box.setBackground(bg);
-        box.setLayoutParams(evLp(93f, 9f, 1.2f));
+        box.setLayoutParams(evLp(93f, 8f, 1.2f));
         final EditText e = new EditText(context);
         e.setBackground(null);
         e.setTextSize(13);
         e.setTextColor(Color.WHITE);
-        e.setHint(hint);
+        android.text.SpannableString ss = new android.text.SpannableString(hint);
+        ss.setSpan(new android.text.style.AbsoluteSizeSpan(12, true), 0, hint.length(),
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        e.setHint(ss);
         e.setHintTextColor(evGray());
         Typeface f = shopFont();
         e.setTypeface(f != null ? f : Typeface.DEFAULT);
@@ -6991,17 +7079,18 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         if (initial != null) e.setText(initial);
         box.addView(e, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        e.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                if (hasFocus) bg.setStroke(dp(2), Color.rgb(0xEE, 0xEE, 0xEE));
-                else bg.setStroke(dp(1), evGray());
-            }
-        });
         if (locked) {
             e.setEnabled(false);
             e.setFocusable(false);
             evLock(box);
+        } else {
+            e.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                @Override
+                public void onFocusChange(View v, boolean hasFocus) {
+                    if (hasFocus) bg.setStroke(dp(2), Color.rgb(0xEE, 0xEE, 0xEE));
+                    else bg.setStroke(dp(1), evGray());
+                }
+            });
         }
         parent.addView(box);
         return e;
@@ -7010,18 +7099,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     private TextView evPicker(final String hint, final boolean isTime, boolean locked,
                               LinearLayout parent, float wPct, float leftPct, String initial) {
         final FrameLayout box = new FrameLayout(context);
-        final GradientDrawable bg = evBg(evCard(), 1, evGray(), evRadius());
-        box.setBackground(bg);
-        LinearLayout.LayoutParams lp = evLp(wPct, 9f, parent.getOrientation() == LinearLayout.HORIZONTAL ? 0f : 1.2f);
+        box.setBackground(locked ? evDash(evCard(), evGray(), evRadius())
+                : evBg(evCard(), 1, evGray(), evRadius()));
+        boolean horiz = parent.getOrientation() == LinearLayout.HORIZONTAL;
+        LinearLayout.LayoutParams lp = evLp(wPct, 8f, horiz ? 0f : 1.2f);
         lp.leftMargin = wp(leftPct);
         box.setLayoutParams(lp);
-        final TextView t = text(hint, 13, evGray(), false);
+        final TextView t = text(hint, 12, evGray(), false);
         t.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         t.setPadding(wp(5f), 0, wp(3f), 0);
         box.addView(t, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         if (initial != null && !initial.isEmpty()) {
             t.setText(initial);
+            t.setTextSize(13);
             t.setTextColor(Color.WHITE);
             t.setTag(initial);
         }
@@ -7037,10 +7128,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                 new android.app.TimePickerDialog.OnTimeSetListener() {
                                     @Override
                                     public void onTimeSet(android.widget.TimePicker p, int h, int m) {
-                                        String s = String.format(java.util.Locale.US, "%02d:%02d", h, m);
-                                        t.setText(s);
-                                        t.setTextColor(Color.WHITE);
-                                        t.setTag(s);
+                                        evSetPicked(t, String.format(java.util.Locale.US, "%02d:%02d", h, m));
                                     }
                                 }, c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE), true).show();
                     } else {
@@ -7048,10 +7136,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                                 new android.app.DatePickerDialog.OnDateSetListener() {
                                     @Override
                                     public void onDateSet(android.widget.DatePicker p, int y, int m, int d) {
-                                        String s = String.format(java.util.Locale.US, "%02d/%02d/%04d", d, m + 1, y);
-                                        t.setText(s);
-                                        t.setTextColor(Color.WHITE);
-                                        t.setTag(s);
+                                        evSetPicked(t, String.format(java.util.Locale.US, "%02d/%02d/%04d", d, m + 1, y));
                                     }
                                 }, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH),
                                 c.get(java.util.Calendar.DAY_OF_MONTH)).show();
@@ -7063,12 +7148,20 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         return t;
     }
 
-    // Bouton blanc, texte noir (Subscribe, Créer l'événement, Passer à Premium)
+    private void evSetPicked(TextView t, String s) {
+        t.setText(s);
+        t.setTextSize(13);
+        t.setTextColor(Color.WHITE);
+        t.setTag(s);
+    }
+
+    // Bouton blanc, texte noir (police des boutons chargeable avec LoadEventFonts)
     private TextView evButton(String label, float hPct, float wPct, int sp, boolean bold, float topPct) {
         TextView b = text(label, sp, Color.BLACK, bold);
+        if (evButtonFont != null) b.setTypeface(evButtonFont);
         b.setGravity(Gravity.CENTER);
         b.setSingleLine(true);
-        b.setBackground(evBg(Color.WHITE, 0, Color.WHITE, hp(hPct) / 2f));
+        b.setBackground(evBg(Color.WHITE, 0, Color.WHITE, evRadius()));
         b.setLayoutParams(evLp(wPct, hPct, topPct));
         return b;
     }
@@ -7083,7 +7176,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         if (evCount != null) evVals[2] = evCount.getText().toString();
         if (evDate != null) evVals[3] = evVal(evDate);
         if (evTime != null) evVals[4] = evVal(evTime);
-        if (evExpiry != null) evVals[5] = evVal(evExpiry);
+        if (evExpDate != null) evVals[5] = evVal(evExpDate);
+        if (evExpTime != null) evVals[6] = evVal(evExpTime);
     }
 
     private void evRender() {
@@ -7107,21 +7201,30 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     private void evRenderForm(LinearLayout col) {
-        TextView title = text("Nouvel événement", 16, Color.WHITE, true);
-        title.setLayoutParams(evLp(93f, 0f, 0f));
-        col.addView(title);
-
-        // Bandeau offre
+        // Bandeau : 11 % x 93 %, bouton Premium 8 % x 40 %
         LinearLayout banner = new LinearLayout(context);
-        banner.setOrientation(LinearLayout.VERTICAL);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
         banner.setBackground(evBg(evCard(), 1, evGray(), evRadius()));
-        banner.setPadding(wp(5f), hp(1.5f), wp(5f), hp(1.5f));
-        banner.setLayoutParams(evLp(93f, 0f, 1.5f));
-        banner.addView(text(evPremium ? "Premium actif" : "Offre gratuite", 13, Color.WHITE, true));
-        banner.addView(text(evPremium ? "Billets illimités · expiration personnalisable."
-                : "Vos billets restent 3 jours sur le serveur.", 13, evGray(), false));
+        banner.setPadding(wp(4f), 0, wp(3f), 0);
+        banner.setLayoutParams(evLp(93f, 11f, 0f));
+        if (evPremium) {
+            TextView ck = evIcon(evGlyphCheck, "✓", 24, Color.WHITE);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            clp.rightMargin = wp(3f);
+            ck.setLayoutParams(clp);
+            banner.addView(ck);
+        }
+        LinearLayout left = new LinearLayout(context);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        left.addView(text(evPremium ? "Premium actif" : "Offre gratuite", 13, Color.WHITE, true));
+        left.addView(text(evPremium ? "Billets illimités · expiration personnalisable."
+                : "Vos billets restent 3 jours sur le serveur.", 12, evGray(), false));
+        banner.addView(left);
         if (!evPremium) {
-            TextView up = evButton("Passer à Premium", 5.2f, 34f, 13, false, 1f);
+            TextView up = evButton("Passer à Premium", 8f, 40f, 13, false, 0f);
             up.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -7132,10 +7235,19 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         }
         col.addView(banner);
 
-        // Carte image du ticket (30 % x 93 %)
+        // Carte image du ticket : 30 % x 93 %
+        final int cardH = hp(30f);
+        final int pad = dp(10);
         FrameLayout img = new FrameLayout(context);
         img.setBackground(evBg(evCard(), 1, evGray(), evRadius()));
-        img.setLayoutParams(evLp(93f, 30f, 1.5f));
+        img.setLayoutParams(evLp(93f, 30f, 2f));
+        LinearLayout inner = new LinearLayout(context);
+        inner.setOrientation(LinearLayout.VERTICAL);
+        inner.setPadding(pad, pad, pad, pad);
+        FrameLayout dz = new FrameLayout(context);
+        dz.setBackground(evDash(Color.TRANSPARENT, evGray(), evRadius()));
+        dz.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 3f));
         evPreview = new ImageView(context);
         evPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         evPreview.setVisibility(View.GONE);
@@ -7146,53 +7258,100 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             }
         });
         evPreview.setClipToOutline(true);
-        img.addView(evPreview, new FrameLayout.LayoutParams(
+        dz.addView(evPreview, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         evPickHint = new LinearLayout(context);
         evPickHint.setOrientation(LinearLayout.VERTICAL);
         evPickHint.setGravity(Gravity.CENTER);
+        evPickHint.addView(evIcon(evGlyphImage, "", 30, Color.WHITE));
         TextView h1 = text("Ajouter l’image du billet", 13, Color.WHITE, false);
-        TextView h2 = text("PNG ou JPG", 13, evGray(), false);
+        TextView h2 = text("PNG ou JPG", 12, evGray(), false);
         h1.setGravity(Gravity.CENTER);
         h2.setGravity(Gravity.CENTER);
         evPickHint.addView(h1);
         evPickHint.addView(h2);
-        img.addView(evPickHint, new FrameLayout.LayoutParams(
+        dz.addView(evPickHint, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        inner.addView(dz);
+        View sep = evDashLine();
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
+        slp.topMargin = dp(8);
+        slp.bottomMargin = dp(8);
+        inner.addView(sep, slp);
+        LinearLayout bottom = new LinearLayout(context);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.setPadding(dp(4), 0, dp(4), 0);
+        bottom.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.2f));
+        LinearLayout bl = new LinearLayout(context);
+        bl.setOrientation(LinearLayout.VERTICAL);
+        bl.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView media = text("MÉDIA", 12, evGray(), true);
+        media.setLetterSpacing(0.15f);
+        bl.addView(media);
+        bl.addView(text("Ajoutez le visuel officiel ou l’affiche de votre événement.", 12, evGray(), false));
+        bottom.addView(bl);
+        bottom.addView(evIcon(evGlyphQr, "", 34, Color.WHITE));
+        inner.addView(bottom);
+        img.addView(inner, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        // encoches rondes de chaque côté du pointillé
+        float avail = cardH - 2 * pad - dp(2) - dp(16);
+        int sepY = pad + (int) (avail * 3f / 4.2f) + dp(8) + dp(1);
+        for (int k = 0; k < 2; k++) {
+            View n = new View(context);
+            GradientDrawable ng = new GradientDrawable();
+            ng.setShape(GradientDrawable.OVAL);
+            ng.setColor(evBlack());
+            n.setBackground(ng);
+            FrameLayout.LayoutParams nlp = new FrameLayout.LayoutParams(dp(18), dp(18));
+            nlp.gravity = (k == 0 ? Gravity.START : Gravity.END) | Gravity.TOP;
+            nlp.topMargin = sepY - dp(9);
+            if (k == 0) nlp.leftMargin = -dp(9);
+            else nlp.rightMargin = -dp(9);
+            img.addView(n, nlp);
+        }
         img.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                pickTarget = 1;
                 OpenPhotoPicker();
             }
         });
         col.addView(img);
         if (evImageUri != null && !evImageUri.isEmpty()) evShowImage(evImageUri);
-        evCaption(col, "Ajoutez le visuel officiel ou l’affiche de votre événement.");
 
-        evName = evEdit("Nom de l’événement", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES,
-                false, col, evVals[0]);
-        evCaption(col, "Donnez un titre clair et accrocheur à votre événement.");
+        evTitleRow(col, "Nom de l’événement", "Donnez un titre clair et accrocheur à votre événement.", false);
+        evName = evEdit("Ex. Soirée Kompa Night",
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, false, col, evVals[0]);
 
-        evTicket = evEdit("Nom du ticket" + (evPremium ? "" : " · Premium"),
+        evTitleRow(col, "Nom du ticket", "Nommez votre type de billet.", !evPremium);
+        evTicket = evEdit(evPremium ? "Ex. VIP, Standard" : "Disponible avec Premium",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, !evPremium, col, evVals[1]);
-        evCaption(col, "Nommez votre type de billet (VIP, Standard…).");
 
-        evCount = evEdit("Nombre de tickets", InputType.TYPE_CLASS_NUMBER, false, col, evVals[2]);
-        evCaption(col, "Ajoutez le nombre de tickets que vous souhaitez enregistrer.");
+        evTitleRow(col, "Nombre de tickets", "Ajoutez le nombre de tickets que vous souhaitez enregistrer.", false);
+        evCount = evEdit("Ex. 100", InputType.TYPE_CLASS_NUMBER, false, col, evVals[2]);
 
-        LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setLayoutParams(evLp(93f, 9f, 1.2f));
-        evDate = evPicker("Date de l’événement", false, false, row, 55f, 0f, evVals[3]);
-        evTime = evPicker("Heure", true, false, row, 36.6f, 1.4f, evVals[4]);
-        col.addView(row);
-        evCaption(col, "Indiquez le jour et l’heure du début de l’événement.");
+        evTitleRow(col, "Date de l’événement", "Indiquez le jour et l’heure du début de l’événement.", false);
+        LinearLayout row1 = new LinearLayout(context);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setLayoutParams(evLp(93f, 8f, 1.2f));
+        evDate = evPicker("JJ/MM/AAAA", false, false, row1, 55f, 0f, evVals[3]);
+        evTime = evPicker("HH:MM", true, false, row1, 36.5f, 1.5f, evVals[4]);
+        col.addView(row1);
 
-        evExpiry = evPicker("Expiration du billet" + (evPremium ? "" : " · Premium"),
-                false, !evPremium, col, 93f, 0f, evVals[5]);
-        evCaption(col, "Passé cette date, les billets ne seront plus valides pour le scan.");
+        evTitleRow(col, "Expiration du billet", "Passé cette date, les billets ne seront plus valides pour le scan.", !evPremium);
+        LinearLayout row2 = new LinearLayout(context);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setLayoutParams(evLp(93f, 8f, 1.2f));
+        evExpDate = evPicker(evPremium ? "JJ/MM/AAAA" : "Disponible avec Premium", false, !evPremium,
+                row2, 55f, 0f, evVals[5]);
+        evExpTime = evPicker("HH:MM", true, !evPremium, row2, 36.5f, 1.5f, evVals[6]);
+        col.addView(row2);
 
-        TextView create = evButton("Créer l’événement", 6.2f, 93f, 16, true, 2f);
+        TextView create = evButton("Créer l’événement", 8f, 93f, 16, true, 4f);
         create.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -7200,7 +7359,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             }
         });
         col.addView(create);
-        evCaption(col, "Un QR code dynamique et unique est attribué à chaque billet.");
+        TextView cap = text("Un QR code dynamique et unique est attribué à chaque billet.", 12, evGray(), false);
+        cap.setGravity(Gravity.CENTER);
+        cap.setLayoutParams(evLp(93f, 0f, 1f));
+        col.addView(cap);
     }
 
     private void evShowImage(String uri) {
@@ -7214,10 +7376,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         }
     }
 
-    // Appelé par resultReturned quand une image est choisie
+    // Appelé par resultReturned quand l'image du billet est choisie
     private void eventImagePicked(final String uri) {
-        if (evContainer == null || evSubscribeMode) return;
         evImageUri = uri;
+        if (evContainer == null || evSubscribeMode) return;
         runOnUi(new Runnable() {
             @Override
             public void run() {
@@ -7253,62 +7415,105 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     }
 
     private void evRenderSubscribe(LinearLayout col) {
-        TextView t1 = text("Passer à Premium", 16, Color.WHITE, true);
+        TextView t1 = evBig("Des billets sans limite", 18);
         t1.setLayoutParams(evLp(93f, 0f, 0f));
         col.addView(t1);
-        TextView t2 = text("Des billets sans limite", 13, Color.WHITE, false);
-        t2.setLayoutParams(evLp(93f, 0f, 1f));
+        TextView t2 = text("Débloquez toutes les fonctions de Seven.", 12, evGray(), false);
+        t2.setLayoutParams(evLp(93f, 0f, 0.5f));
         col.addView(t2);
-        TextView t3 = text("Débloquez toutes les fonctions de Seven.", 13, evGray(), false);
-        t3.setLayoutParams(evLp(93f, 0f, 0.3f));
-        col.addView(t3);
         String[] perks = {"Billets illimités", "Expiration du billet personnalisable", "Nom du ticket personnalisable"};
         for (String p : perks) {
-            TextView pv = text("✓  " + p, 13, Color.WHITE, false);
-            pv.setLayoutParams(evLp(93f, 0f, 0.8f));
-            col.addView(pv);
+            LinearLayout pr = new LinearLayout(context);
+            pr.setOrientation(LinearLayout.HORIZONTAL);
+            pr.setGravity(Gravity.CENTER_VERTICAL);
+            pr.setLayoutParams(evLp(93f, 0f, 2f));
+            TextView ck = evIcon(evGlyphCheck, "✓", 22, Color.WHITE);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            clp.rightMargin = wp(3f);
+            ck.setLayoutParams(clp);
+            pr.addView(ck);
+            pr.addView(text(p, 13, Color.WHITE, false));
+            col.addView(pr);
         }
 
+        // Carte SEVEN PREMIUM : 11 % x 93 %
         LinearLayout card = new LinearLayout(context);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(evBg(evCard(), 1, evGray(), evRadius()));
-        card.setPadding(wp(5f), hp(1.5f), wp(5f), hp(1.5f));
-        card.setLayoutParams(evLp(93f, 0f, 2f));
-        card.addView(text("SEVEN PREMIUM", 13, evGray(), false));
-        card.addView(text("Abonnement", 13, Color.WHITE, false));
-        card.addView(text(evSubPrice + "  par " + evSubPeriod, 16, Color.WHITE, true));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(evBg(Color.TRANSPARENT, 1, Color.WHITE, evRadius()));
+        card.setPadding(wp(5f), 0, wp(5f), 0);
+        card.setLayoutParams(evLp(93f, 11f, 2f));
+        LinearLayout cl = new LinearLayout(context);
+        cl.setOrientation(LinearLayout.VERTICAL);
+        cl.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView sp = text("SEVEN PREMIUM", 12, evGray(), true);
+        sp.setLetterSpacing(0.15f);
+        cl.addView(sp);
+        cl.addView(text("Abonnement", 12, evGray(), false));
+        card.addView(cl);
+        LinearLayout cr = new LinearLayout(context);
+        cr.setOrientation(LinearLayout.VERTICAL);
+        cr.setGravity(Gravity.END);
+        cr.addView(evBig(evSubPrice, 18));
+        cr.addView(text("par " + evSubPeriod, 12, evGray(), false));
+        card.addView(cr);
         col.addView(card);
 
-        TextView pm = text("Moyen de paiement", 13, evGray(), false);
+        TextView pm = text("Moyen de paiement", 13, Color.WHITE, true);
         pm.setLayoutParams(evLp(93f, 0f, 2f));
         col.addView(pm);
         LinearLayout gp = new LinearLayout(context);
-        gp.setOrientation(LinearLayout.VERTICAL);
-        gp.setGravity(Gravity.CENTER_VERTICAL);
-        gp.setBackground(evBg(Color.BLACK, 2, Color.WHITE, hp(9f) / 2f));
-        gp.setPadding(wp(5f), 0, wp(3f), 0);
-        LinearLayout.LayoutParams glp = evLp(40f, 9f, 0.8f);
+        gp.setOrientation(LinearLayout.HORIZONTAL);
+        gp.setGravity(Gravity.CENTER);
+        gp.setBackground(evBg(Color.BLACK, 2, Color.WHITE, evRadius()));
+        LinearLayout.LayoutParams glp = evLp(40f, 9f, 1.2f);
         glp.gravity = Gravity.START;
         glp.leftMargin = wp(3.5f);
         gp.setLayoutParams(glp);
+        TextView pl = evIcon(evGlyphPlay, "▶", 18, Color.WHITE);
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        plp.rightMargin = wp(2.5f);
+        pl.setLayoutParams(plp);
+        gp.addView(pl);
         gp.addView(text("Google Play", 13, Color.WHITE, false));
-        gp.addView(text(evSubEmail.isEmpty() ? "Compte Google" : evSubEmail, 13, evGray(), false, 1));
         col.addView(gp);
 
-        TextView rec = text("Récapitulatif", 13, evGray(), false);
-        rec.setLayoutParams(evLp(93f, 0f, 2f));
-        col.addView(rec);
-        evRow(col, "Abonnement", "Seven Premium");
-        evRow(col, "Prix", evSubPrice);
-        evRow(col, "Renouvellement", "Tous les " + evSubPeriod);
-        evRow(col, "Compte Google", evSubEmail);
-
+        // Récapitulatif : 35 % x 93 %
+        LinearLayout rec = new LinearLayout(context);
+        rec.setOrientation(LinearLayout.VERTICAL);
+        rec.setBackground(evBg(evCard(), 1, evGray(), evRadius()));
+        rec.setPadding(wp(5f), hp(2f), wp(5f), hp(2f));
+        rec.setLayoutParams(evLp(93f, 35f, 2f));
+        rec.addView(text("Récapitulatif", 13, Color.WHITE, true));
+        evRow(rec, "Abonnement", "Seven Premium");
+        evRow(rec, "Prix", evSubPrice);
+        evRow(rec, "Renouvellement", "Tous les " + evSubPeriod);
+        evRow(rec, "Compte Google", evSubEmail);
+        View line = evDashLine();
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
+        dlp.topMargin = hp(2f);
+        rec.addView(line, dlp);
+        LinearLayout info = new LinearLayout(context);
+        info.setOrientation(LinearLayout.HORIZONTAL);
+        info.setLayoutParams(evLp(93f, 0f, 2f));
+        TextView ii = evIcon(evGlyphInfo, "i", 14, evGray());
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        ilp.rightMargin = wp(3f);
+        ilp.topMargin = dp(2);
+        ii.setLayoutParams(ilp);
+        info.addView(ii);
         TextView fine = text("Annulable à tout moment dans Google Play. Le paiement est géré par votre compte Google.",
-                13, evGray(), false);
-        fine.setLayoutParams(evLp(93f, 0f, 1.5f));
-        col.addView(fine);
+                12, evGray(), false);
+        fine.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        info.addView(fine);
+        rec.addView(info);
+        col.addView(rec);
 
-        TextView sub = evButton("S’abonner · " + evSubPrice + " avec Google Play", 6.2f, 93f, 16, true, 2f);
+        TextView sub = evButton("S’abonner · " + evSubPrice + " avec Google Play", 8f, 93f, 16, true, 5f);
         sub.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -7316,16 +7521,21 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             }
         });
         col.addView(sub);
-        evCaption(col, "Paiement sécurisé via Google Play.");
+        TextView cap = text("Paiement sécurisé via Google Play.", 12, evGray(), false);
+        cap.setGravity(Gravity.CENTER);
+        cap.setLayoutParams(evLp(93f, 0f, 1f));
+        col.addView(cap);
     }
 
     private void evRow(LinearLayout col, String k, String v) {
         LinearLayout r = new LinearLayout(context);
         r.setOrientation(LinearLayout.HORIZONTAL);
-        r.setLayoutParams(evLp(93f, 0f, 0.6f));
-        TextView a = text(k, 13, evGray(), false);
+        r.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        ((LinearLayout.LayoutParams) r.getLayoutParams()).topMargin = hp(2f);
+        TextView a = text(k, 12, evGray(), false);
         a.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        TextView b = text(v == null ? "" : v, 13, Color.WHITE, false);
+        TextView b = text(v == null ? "" : v, 13, Color.WHITE, true);
         b.setGravity(Gravity.END);
         b.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         r.addView(a);
@@ -7346,7 +7556,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
-    @SimpleFunction(description = "Construit l'écran « Ajouter un événement » (design Seven V19) dans l'arrangement donné. premium = faux : écran Gratuit (nom du ticket et expiration verrouillés) ; vrai : écran Premium.")
+    @SimpleFunction(description = "Construit l'écran « Ajouter un événement » (design Seven) dans l'arrangement donné. premium = faux : écran Gratuit (nom du ticket et expiration verrouillés) ; vrai : écran Premium.")
     public void BuildEventForm(final AndroidViewComponent container, final boolean premium) {
         if (container == null || container.getView() == null) {
             OnError("BuildEventForm: conteneur invalide.");
@@ -7406,6 +7616,37 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         });
     }
 
+    @SimpleFunction(description = "Charge les polices des écrans Seven : titlesFont pour les grands titres (18), buttonsFont pour les boutons. Chemin d'un fichier .ttf/.otf des Assets ; vide = police normale (LoadCustomFont / LoadCustomBoldFont).")
+    public void LoadEventFonts(String titlesFont, String buttonsFont) {
+        evTitleFont = titlesFont == null || titlesFont.trim().isEmpty() ? null : tryLoadTypeface(titlesFont.trim());
+        evButtonFont = buttonsFont == null || buttonsFont.trim().isEmpty() ? null : tryLoadTypeface(buttonsFont.trim());
+        if (evTitleFont == null && titlesFont != null && !titlesFont.trim().isEmpty())
+            OnError("LoadEventFonts: police des titres introuvable (" + titlesFont + ").");
+        if (evButtonFont == null && buttonsFont != null && !buttonsFont.trim().isEmpty())
+            OnError("LoadEventFonts: police des boutons introuvable (" + buttonsFont + ").");
+        evRebuildOnUi();
+    }
+
+    @SimpleFunction(description = "Charge la police d'icônes (ex. Phosphor .ttf des Assets) utilisée par les écrans Seven.")
+    public void SetEventIconFont(String fontPath) {
+        evIconFont = fontPath == null || fontPath.trim().isEmpty() ? null : tryLoadTypeface(fontPath.trim());
+        if (evIconFont == null && fontPath != null && !fontPath.trim().isEmpty())
+            OnError("SetEventIconFont: police introuvable (" + fontPath + ").");
+        evRebuildOnUi();
+    }
+
+    @SimpleFunction(description = "Définit les icônes (le caractère Phosphor de chaque icône) : image du billet, QR code, cadenas, coche, lecture Google Play, information.")
+    public void SetEventIcons(String imageGlyph, String qrGlyph, String lockGlyph, String checkGlyph,
+                              String playGlyph, String infoGlyph) {
+        evGlyphImage = imageGlyph == null ? "" : imageGlyph;
+        evGlyphQr = qrGlyph == null ? "" : qrGlyph;
+        evGlyphLock = lockGlyph == null ? "" : lockGlyph;
+        evGlyphCheck = checkGlyph == null ? "" : checkGlyph;
+        evGlyphPlay = playGlyph == null ? "" : playGlyph;
+        evGlyphInfo = infoGlyph == null ? "" : infoGlyph;
+        evRebuildOnUi();
+    }
+
     @SimpleFunction(description = "Retourne les valeurs saisies (image, nom, nom du ticket, nombre, date, heure, expiration, premium) au format JSON.")
     public String GetEventFormJson() {
         evSave();
@@ -7417,7 +7658,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             o.put("count", evVals[2] == null ? "" : evVals[2].trim());
             o.put("date", evVals[3] == null ? "" : evVals[3]);
             o.put("time", evVals[4] == null ? "" : evVals[4]);
-            o.put("expiry", evVals[5] == null ? "" : evVals[5]);
+            String ed = evVals[5] == null ? "" : evVals[5];
+            String et = evVals[6] == null ? "" : evVals[6];
+            o.put("expiry", et.isEmpty() ? ed : (ed + " " + et).trim());
             o.put("premium", evPremium);
             return o.toString();
         } catch (Exception e) {
@@ -7434,8 +7677,14 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         evCount = null;
         evDate = null;
         evTime = null;
-        evExpiry = null;
+        evExpDate = null;
+        evExpTime = null;
         if (!evSubscribeMode) evRebuildOnUi();
+    }
+
+    @SimpleEvent(description = "Déclenché quand l'image du billet est choisie dans l'écran « Ajouter un événement » (n'envoie rien au chat : OnPhotoPicked reste réservé au chat).")
+    public void OnEventImagePicked(String imageUri) {
+        EventDispatcher.dispatchEvent(this, "OnEventImagePicked", imageUri);
     }
 
     @SimpleEvent(description = "Déclenché quand le formulaire est valide et que l'utilisateur appuie sur « Créer l'événement ». eventJson contient les valeurs saisies.")
