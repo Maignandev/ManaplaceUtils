@@ -7351,7 +7351,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         evExpTime = evPicker("HH:MM", true, !evPremium, row2, 36.5f, 1.5f, evVals[6]);
         col.addView(row2);
 
-        TextView create = evButton("Créer l’événement", 8f, 93f, 16, true, 4f);
+        TextView create = evButton("Créer l’événement", 7f, 93f, 16, true, 4f);
         create.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -7426,7 +7426,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             LinearLayout pr = new LinearLayout(context);
             pr.setOrientation(LinearLayout.HORIZONTAL);
             pr.setGravity(Gravity.CENTER_VERTICAL);
-            pr.setLayoutParams(evLp(93f, 0f, 2f));
+            pr.setLayoutParams(evLp(93f, 0f, 1f));
             TextView ck = evIcon(evGlyphCheck, "✓", 22, Color.WHITE);
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -7443,7 +7443,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setBackground(evBg(Color.TRANSPARENT, 1, Color.WHITE, evRadius()));
         card.setPadding(wp(5f), 0, wp(5f), 0);
-        card.setLayoutParams(evLp(93f, 11f, 2f));
+        card.setLayoutParams(evLp(93f, 10f, 2f));
         LinearLayout cl = new LinearLayout(context);
         cl.setOrientation(LinearLayout.VERTICAL);
         cl.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -7467,7 +7467,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         gp.setOrientation(LinearLayout.HORIZONTAL);
         gp.setGravity(Gravity.CENTER);
         gp.setBackground(evBg(Color.BLACK, 2, Color.WHITE, evRadius()));
-        LinearLayout.LayoutParams glp = evLp(40f, 9f, 1.2f);
+        LinearLayout.LayoutParams glp = evLp(40f, 8f, 1.2f);
         glp.gravity = Gravity.START;
         glp.leftMargin = wp(3.5f);
         gp.setLayoutParams(glp);
@@ -7485,7 +7485,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         rec.setOrientation(LinearLayout.VERTICAL);
         rec.setBackground(evBg(evCard(), 1, evGray(), evRadius()));
         rec.setPadding(wp(5f), hp(2f), wp(5f), hp(2f));
-        rec.setLayoutParams(evLp(93f, 35f, 2f));
+        rec.setLayoutParams(evLp(93f, 36f, 2f));
         rec.addView(text("Récapitulatif", 13, Color.WHITE, true));
         evRow(rec, "Abonnement", "Seven Premium");
         evRow(rec, "Prix", evSubPrice);
@@ -7513,7 +7513,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         rec.addView(info);
         col.addView(rec);
 
-        TextView sub = evButton("S’abonner · " + evSubPrice + " avec Google Play", 8f, 93f, 16, true, 5f);
+        TextView sub = evButton("S’abonner · " + evSubPrice + " avec Google Play", 7f, 93f, 16, true, 5f);
         sub.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -7532,7 +7532,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         r.setOrientation(LinearLayout.HORIZONTAL);
         r.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        ((LinearLayout.LayoutParams) r.getLayoutParams()).topMargin = hp(2f);
+        ((LinearLayout.LayoutParams) r.getLayoutParams()).topMargin = hp(1f);
         TextView a = text(k, 12, evGray(), false);
         a.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView b = text(v == null ? "" : v, 13, Color.WHITE, true);
