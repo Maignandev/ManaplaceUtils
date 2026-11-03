@@ -119,7 +119,7 @@ import javax.net.ssl.SSLSocketFactory;
 
 @DesignerComponent(
         version = 17,
-        description = "Extension ManaplaceUtils - corrections: clavier flottant, auto-grow, galerie/permissions, barre de navigation, réutilisation multiple sans conflit parent/dialogue + détails produits + badges génériques + page boutique vendeur/acheteur (header logo, barre de statut, menu infos, compteur, chargement serveur, suppression produit) + pages Modifier la boutique, Prix (HTG / USD, livraison, total) et État et variantes (dialogue, couleur avec pastilles, taille) + page détails produit (images défilantes, prix, stock et livraison, quantité, vendeur, partage) + page « Créer ma boutique » (champs à libellé animé, vérification du nom, catégories, logo, envoi, statut vendeur) + formulaire « Ajouter un produit » (multimédia 5 photos, titre, lignes cliquables, stock, validation, brouillon, envoi multipart).",
+        description = "Extension ManaplaceUtils pour Seven : écrans Ajouter un événement (Gratuit, Premium, abonnement Google Play), billets blancs, bouton Ajouter un événement avec vérification d'internet, pages réglages et langue, chat (bulles, saisie flottante, historique, conversations, WebSocket), barre de navigation, badges, notifications, polices, icônes Phosphor, dialogue alpha, menu déroulant, photo du billet, serveur, JSON et son du scan.",
         category = ComponentCategory.EXTENSION,
         nonVisible = true
 )
@@ -129,7 +129,8 @@ import javax.net.ssl.SSLSocketFactory;
                 "android.permission.READ_EXTERNAL_STORAGE," +
                 "android.permission.READ_MEDIA_IMAGES," +
                 "android.permission.INTERNET," +
-                "android.permission.POST_NOTIFICATIONS"
+                "android.permission.POST_NOTIFICATIONS," +
+                "android.permission.ACCESS_NETWORK_STATE"
 )
 public class ManaplaceUtils extends AndroidNonvisibleComponent implements ActivityResultListener {
 
@@ -3430,7 +3431,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
                             String displayText =
                                     (lastMessage == null || lastMessage.trim().isEmpty())
-                                            ? "Négociation en cours"
+                                            ? evT("negotiating")
                                             : lastMessage;
 
                             subtitle.setText(displayText);
@@ -3659,7 +3660,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
         String displayText =
                 (lastMessage == null || lastMessage.trim().isEmpty())
-                        ? "Négociation en cours"
+                        ? evT("negotiating")
                         : lastMessage;
 
         TextView subtitleTv = new TextView(context);
@@ -4081,7 +4082,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         final int sh = dm.heightPixels;
         int pillMinH = (int) (sh * 0.062f);
         int vMargin = (int) (sh * 0.012f);
-        int sendSize = (int) (sw * 0.11f);
+        int sendSize = (int) (sw * 0.13f);
         Typeface font = customTypeface != null ? customTypeface : Typeface.DEFAULT;
 
         LinearLayout row = new LinearLayout(context);
@@ -4092,21 +4093,21 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         // carte du champ : 82 % de la largeur, coins 30
         FrameLayout pill = new FrameLayout(context);
         LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
-                (int) (sw * 0.82f), ViewGroup.LayoutParams.WRAP_CONTENT);
+                (int) (sw * 0.75f), ViewGroup.LayoutParams.WRAP_CONTENT);
         plp.leftMargin = (int) (sw * 0.02f);
         plp.topMargin = vMargin;
         plp.bottomMargin = vMargin;
         pill.setLayoutParams(plp);
         pill.setMinimumHeight(pillMinH);
         GradientDrawable pbg = new GradientDrawable();
-        pbg.setColor(Color.BLACK);
+        pbg.setColor(Color.argb(0xED, 0x1A, 0x1A, 0x1B));
         pbg.setCornerRadius(dpToPx(30));
-        pbg.setStroke(dp(1), Color.parseColor("#9E9E9E"));
+        pbg.setStroke(0, Color.TRANSPARENT);
         pill.setBackground(pbg);
 
         chatEdit = new EditText(context);
         chatEdit.setBackground(null);
-        chatEdit.setHint("Message");
+        chatEdit.setHint(evT("msg_hint"));
         chatEdit.setHintTextColor(Color.parseColor("#9E9E9E"));
         chatEdit.setTextColor(Color.WHITE);
         chatEdit.setTextSize(15);
@@ -4201,9 +4202,9 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         if (chatSendTv == null || chatEdit == null || chatSendBg == null) return;
         boolean active = chatEdit.getText() != null
                 && chatEdit.getText().toString().trim().length() > 0;
-        chatSendBg.setColor(active ? chatAccent : Color.TRANSPARENT);
-        chatSendBg.setStroke(dp(1), active ? chatAccent : Color.parseColor("#E0E0E0"));
-        chatSendTv.setTextColor(active ? Color.WHITE : Color.parseColor("#BDBDBD"));
+        chatSendBg.setColor(active ? Color.WHITE : Color.TRANSPARENT);
+        chatSendBg.setStroke(dp(1), active ? Color.WHITE : Color.parseColor("#9E9E9E"));
+        chatSendTv.setTextColor(active ? Color.BLACK : Color.parseColor("#9E9E9E"));
         boolean has = !chatIconSend.isEmpty();
         chatSendTv.setTypeface(has && chatIcons() != null ? chatIcons() : Typeface.DEFAULT);
         chatSendTv.setText(has ? chatIconSend : "\u2191");
@@ -4257,6 +4258,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     // Remonte le conteneur au-dessus du clavier ; un nouvel appel remplace l'écouteur précédent
     private void chatAttachKeyboard(final View containerView, EditText edit, int maxHeightPx) {
+        evAutoPan();
         chatApplyMaxHeight(edit, maxHeightPx);
         chatDetachKeyboard();
 
@@ -4817,13 +4819,13 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                         && calHier.get(java.util.Calendar.DAY_OF_YEAR) == calMessage.get(java.util.Calendar.DAY_OF_YEAR);
 
         if (estAujourdhui) {
-            return "Aujourd'hui";
+            return evT("today");
         } else if (estHier) {
-            return "Hier";
+            return evT("yesterday");
         } else {
             boolean memeAnnee = calAujourdhui.get(java.util.Calendar.YEAR) == calMessage.get(java.util.Calendar.YEAR);
             String format = memeAnnee ? "d MMM" : "d MMM yyyy";
-            return new java.text.SimpleDateFormat(format, java.util.Locale.FRENCH).format(new java.util.Date(millis));
+            return new java.text.SimpleDateFormat(format, evLocale()).format(new java.util.Date(millis));
         }
     }
 
@@ -5003,7 +5005,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         TextView statusTv = null;
         if (isMe && bubble instanceof LinearLayout) {
             statusTv = new TextView(context);
-            statusTv.setText("Envoyé");
+            statusTv.setText(evT("sent"));
             statusTv.setTextColor(statusColor);
             statusTv.setTextSize(10);
             LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
@@ -5171,7 +5173,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                 JSONObject m = liste.getJSONObject(liste.length() - 1);
                 dernier = m.optString("text", "");
                 if (dernier.isEmpty() && !m.optString("image", "").isEmpty()) {
-                    dernier = "\uD83D\uDCF7 Photo";
+                    dernier = "\uD83D\uDCF7 " + evT("photo");
                 }
             }
             JSONObject s = new JSONObject(ancien);
@@ -5238,7 +5240,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     if (layout == null) return;
                     java.lang.ref.WeakReference<TextView> ref = lastSentStatus.get(layout);
                     if (ref != null && ref.get() != null) {
-                        ref.get().setText("Vu");
+                        ref.get().setText(evT("seen"));
                     }
                 } catch (Exception e) {
                     OnError("MarkLastMessageSeen: " + e.getMessage());
@@ -5264,7 +5266,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                     if (layout == null) return;
                     java.lang.ref.WeakReference<TextView> ref = lastSentStatus.get(layout);
                     if (ref != null && ref.get() != null) {
-                        ref.get().setText("Vu");
+                        ref.get().setText(evT("seen"));
                     }
                 } catch (Exception e) {
                     OnError("appliquerEtatVu: " + e.getMessage());
@@ -6638,6 +6640,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
                 TypedValue.COMPLEX_UNIT_DIP, v, context.getResources().getDisplayMetrics());
     }
 
+    private int ink(int alpha) {
+        return Color.argb(alpha, 0x1A, 0x1A, 0x1B);
+    }
+
     private TextView text(String s, int sp, int color) {
         TextView t = new TextView(context);
         t.setText(s);
@@ -6692,6 +6698,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     private Typeface iconFont;
     private Typeface customBoldFont;
+    private String invalidKey = "";
 
     // =========================================================================
     // OUTILS INTERNES
@@ -6699,6 +6706,11 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     private int col(String hex) {
         return Color.parseColor(hex);
+    }
+
+    // #1A1A1B + alpha C0 (écriture RRGGBBAA)
+    private int cText() {
+        return Color.argb(0xC0, 0x1A, 0x1A, 0x1B);
     }
 
     private boolean has(String key) {
@@ -6815,6 +6827,11 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         return t;
     }
 
+    private int valueColor(String key) {
+        if (key.equals(invalidKey)) return col("#D93025");
+        return has(key) ? cText() : col("#6E6E73");
+    }
+
     private int iconColor() {
         return col("#1A1A1B");
     }
@@ -6861,7 +6878,13 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         if (maxChars <= 0 || t.length() <= maxChars) return t;
         return t.substring(0, Math.max(0, maxChars - 1)).trim() + "…";
     }
-    private int shopLogoRequestCode;  // contour au repos
+    private int shopLogoRequestCode;
+
+    // =========================================================================
+    // OUTILS INTERNES
+    // =========================================================================
+
+    private int cTitle() { return ink(0xC0); }  // contour au repos
 
     private TextView text(String s, int sp, int color, boolean bold) {
         TextView t = new TextView(context);
@@ -6880,6 +6903,17 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         } else if (cf != null) {
             t.setTypeface(cf);
         }
+        return t;
+    }
+
+    private TextView desc(String s) {
+        TextView t = text(s, 12, cTitle(), false);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        p.topMargin = dp(12);
+        p.leftMargin = dp(2);
+        t.setLayoutParams(p);
         return t;
     }
     private String color = "";
@@ -7182,8 +7216,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
 
     private void evRender() {
         if (evContainer == null) return;
+        evAutoPan();
         if (!evSubscribeMode) evSave();
         evContainer.removeAllViews();
+        evApplyDir(evContainer);
         evContainer.setBackgroundColor(evBlack());
         ScrollView sv = new ScrollView(context);
         sv.setFillViewport(true);
@@ -7219,12 +7255,12 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         LinearLayout left = new LinearLayout(context);
         left.setOrientation(LinearLayout.VERTICAL);
         left.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        left.addView(text(evPremium ? "Premium actif" : "Offre gratuite", 13, Color.WHITE, true));
-        left.addView(text(evPremium ? "Billets illimités · expiration personnalisable."
-                : "Vos billets restent 3 jours sur le serveur.", 12, evGray(), false));
+        left.addView(text(evPremium ? evT("premium_on") : evT("free_offer"), 13, Color.WHITE, true));
+        left.addView(text(evPremium ? evT("premium_sub")
+                : evT("free_sub"), 12, evGray(), false));
         banner.addView(left);
         if (!evPremium) {
-            TextView up = evButton("Passer à Premium", 8f, 40f, 13, false, 0f);
+            TextView up = evButton(evT("premium_btn"), 8f, 40f, 13, false, 0f);
             up.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -7264,8 +7300,8 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         evPickHint.setOrientation(LinearLayout.VERTICAL);
         evPickHint.setGravity(Gravity.CENTER);
         evPickHint.addView(evIcon(evGlyphImage, "", 30, Color.WHITE));
-        TextView h1 = text("Ajouter l’image du billet", 13, Color.WHITE, false);
-        TextView h2 = text("PNG ou JPG", 12, evGray(), false);
+        TextView h1 = text(evT("add_image"), 13, Color.WHITE, false);
+        TextView h2 = text(evT("png_jpg"), 12, evGray(), false);
         h1.setGravity(Gravity.CENTER);
         h2.setGravity(Gravity.CENTER);
         evPickHint.addView(h1);
@@ -7288,10 +7324,10 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         LinearLayout bl = new LinearLayout(context);
         bl.setOrientation(LinearLayout.VERTICAL);
         bl.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        TextView media = text("MÉDIA", 12, evGray(), true);
+        TextView media = text(evT("media"), 12, evGray(), true);
         media.setLetterSpacing(0.15f);
         bl.addView(media);
-        bl.addView(text("Ajoutez le visuel officiel ou l’affiche de votre événement.", 12, evGray(), false));
+        bl.addView(text(evT("media_sub"), 12, evGray(), false));
         bottom.addView(bl);
         bottom.addView(evIcon(evGlyphQr, "", 34, Color.WHITE));
         inner.addView(bottom);
@@ -7323,35 +7359,35 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         col.addView(img);
         if (evImageUri != null && !evImageUri.isEmpty()) evShowImage(evImageUri);
 
-        evTitleRow(col, "Nom de l’événement", "Donnez un titre clair et accrocheur à votre événement.", false);
-        evName = evEdit("Ex. Soirée Kompa Night",
+        evTitleRow(col, evT("ev_name"), evT("ev_name_sub"), false);
+        evName = evEdit(evT("ev_name_hint"),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, false, col, evVals[0]);
 
-        evTitleRow(col, "Nom du ticket", "Nommez votre type de billet.", !evPremium);
-        evTicket = evEdit(evPremium ? "Ex. VIP, Standard" : "Disponible avec Premium",
+        evTitleRow(col, evT("tk_name"), evT("tk_name_sub"), !evPremium);
+        evTicket = evEdit(evPremium ? evT("tk_name_hint") : evT("premium_only"),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, !evPremium, col, evVals[1]);
 
-        evTitleRow(col, "Nombre de tickets", "Ajoutez le nombre de tickets que vous souhaitez enregistrer.", false);
-        evCount = evEdit("Ex. 100", InputType.TYPE_CLASS_NUMBER, false, col, evVals[2]);
+        evTitleRow(col, evT("tk_count"), evT("tk_count_sub"), false);
+        evCount = evEdit(evT("tk_count_hint"), InputType.TYPE_CLASS_NUMBER, false, col, evVals[2]);
 
-        evTitleRow(col, "Date de l’événement", "Indiquez le jour et l’heure du début de l’événement.", false);
+        evTitleRow(col, evT("ev_date"), evT("ev_date_sub"), false);
         LinearLayout row1 = new LinearLayout(context);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         row1.setLayoutParams(evLp(93f, 8f, 1.2f));
-        evDate = evPicker("JJ/MM/AAAA", false, false, row1, 55f, 0f, evVals[3]);
-        evTime = evPicker("HH:MM", true, false, row1, 36.5f, 1.5f, evVals[4]);
+        evDate = evPicker(evT("date_hint"), false, false, row1, 55f, 0f, evVals[3]);
+        evTime = evPicker(evT("time_hint"), true, false, row1, 36.5f, 1.5f, evVals[4]);
         col.addView(row1);
 
-        evTitleRow(col, "Expiration du billet", "Passé cette date, les billets ne seront plus valides pour le scan.", !evPremium);
+        evTitleRow(col, evT("exp"), evT("exp_sub"), !evPremium);
         LinearLayout row2 = new LinearLayout(context);
         row2.setOrientation(LinearLayout.HORIZONTAL);
         row2.setLayoutParams(evLp(93f, 8f, 1.2f));
-        evExpDate = evPicker(evPremium ? "JJ/MM/AAAA" : "Disponible avec Premium", false, !evPremium,
+        evExpDate = evPicker(evPremium ? evT("date_hint") : evT("premium_only"), false, !evPremium,
                 row2, 55f, 0f, evVals[5]);
-        evExpTime = evPicker("HH:MM", true, !evPremium, row2, 36.5f, 1.5f, evVals[6]);
+        evExpTime = evPicker(evT("time_hint"), true, !evPremium, row2, 36.5f, 1.5f, evVals[6]);
         col.addView(row2);
 
-        TextView create = evButton("Créer l’événement", 7f, 93f, 16, true, 4f);
+        TextView create = evButton(evT("create"), 7f, 93f, 16, true, 4f);
         create.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -7359,7 +7395,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             }
         });
         col.addView(create);
-        TextView cap = text("Un QR code dynamique et unique est attribué à chaque billet.", 12, evGray(), false);
+        TextView cap = text(evT("create_sub"), 12, evGray(), false);
         cap.setGravity(Gravity.CENTER);
         cap.setLayoutParams(evLp(93f, 0f, 1f));
         col.addView(cap);
@@ -7398,30 +7434,30 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         } catch (Exception ignored) {
         }
         if (evImageUri == null || evImageUri.isEmpty()) {
-            OnEventFormInvalid("image", "Ajoutez l’image du billet.");
+            OnEventFormInvalid("image", evT("err_image"));
         } else if (name.isEmpty()) {
-            OnEventFormInvalid("name", "Indiquez le nom de l’événement.");
+            OnEventFormInvalid("name", evT("err_name"));
         } else if (evPremium && ticket.isEmpty()) {
-            OnEventFormInvalid("ticketName", "Indiquez le nom du ticket.");
+            OnEventFormInvalid("ticketName", evT("err_ticket"));
         } else if (n < 1) {
-            OnEventFormInvalid("count", "Indiquez le nombre de tickets.");
+            OnEventFormInvalid("count", evT("err_count"));
         } else if (evVals[3] == null || evVals[3].isEmpty()) {
-            OnEventFormInvalid("date", "Choisissez la date de l’événement.");
+            OnEventFormInvalid("date", evT("err_date"));
         } else if (evVals[4] == null || evVals[4].isEmpty()) {
-            OnEventFormInvalid("time", "Choisissez l’heure de l’événement.");
+            OnEventFormInvalid("time", evT("err_time"));
         } else {
             OnEventCreate(GetEventFormJson());
         }
     }
 
     private void evRenderSubscribe(LinearLayout col) {
-        TextView t1 = evBig("Des billets sans limite", 18);
+        TextView t1 = evBig(evT("sub_title"), 18);
         t1.setLayoutParams(evLp(93f, 0f, 0f));
         col.addView(t1);
-        TextView t2 = text("Débloquez toutes les fonctions de Seven.", 12, evGray(), false);
+        TextView t2 = text(evT("sub_sub"), 12, evGray(), false);
         t2.setLayoutParams(evLp(93f, 0f, 0.5f));
         col.addView(t2);
-        String[] perks = {"Billets illimités", "Expiration du billet personnalisable", "Nom du ticket personnalisable"};
+        String[] perks = {evT("perk1"), evT("perk2"), evT("perk3")};
         for (String p : perks) {
             LinearLayout pr = new LinearLayout(context);
             pr.setOrientation(LinearLayout.HORIZONTAL);
@@ -7450,17 +7486,17 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         TextView sp = text("SEVEN PREMIUM", 12, evGray(), true);
         sp.setLetterSpacing(0.15f);
         cl.addView(sp);
-        cl.addView(text("Abonnement", 12, evGray(), false));
+        cl.addView(text(evT("subscription"), 12, evGray(), false));
         card.addView(cl);
         LinearLayout cr = new LinearLayout(context);
         cr.setOrientation(LinearLayout.VERTICAL);
         cr.setGravity(Gravity.END);
         cr.addView(evBig(evSubPrice, 18));
-        cr.addView(text("par " + evSubPeriod, 12, evGray(), false));
+        cr.addView(text(evPer(), 12, evGray(), false));
         card.addView(cr);
         col.addView(card);
 
-        TextView pm = text("Moyen de paiement", 13, Color.WHITE, true);
+        TextView pm = text(evT("pay_method"), 13, Color.WHITE, true);
         pm.setLayoutParams(evLp(93f, 0f, 2f));
         col.addView(pm);
         LinearLayout gp = new LinearLayout(context);
@@ -7486,11 +7522,11 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         rec.setBackground(evBg(evCard(), 1, evGray(), evRadius()));
         rec.setPadding(wp(5f), hp(2f), wp(5f), hp(2f));
         rec.setLayoutParams(evLp(93f, 36f, 2f));
-        rec.addView(text("Récapitulatif", 13, Color.WHITE, true));
-        evRow(rec, "Abonnement", "Seven Premium");
-        evRow(rec, "Prix", evSubPrice);
-        evRow(rec, "Renouvellement", "Tous les " + evSubPeriod);
-        evRow(rec, "Compte Google", evSubEmail);
+        rec.addView(text(evT("recap"), 13, Color.WHITE, true));
+        evRow(rec, evT("subscription"), "Seven Premium");
+        evRow(rec, evT("price"), evSubPrice);
+        evRow(rec, evT("renewal"), evRenew());
+        evRow(rec, evT("google_account"), evSubEmail);
         View line = evDashLine();
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
@@ -7506,14 +7542,14 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
         ilp.topMargin = dp(2);
         ii.setLayoutParams(ilp);
         info.addView(ii);
-        TextView fine = text("Annulable à tout moment dans Google Play. Le paiement est géré par votre compte Google.",
+        TextView fine = text(evT("cancel_info"),
                 12, evGray(), false);
         fine.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         info.addView(fine);
         rec.addView(info);
         col.addView(rec);
 
-        TextView sub = evButton("S’abonner · " + evSubPrice + " avec Google Play", 7f, 93f, 16, true, 5f);
+        TextView sub = evButton(evT("subscribe_btn").replace("%s", evSubPrice), 7f, 93f, 16, true, 5f);
         sub.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -7521,7 +7557,7 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
             }
         });
         col.addView(sub);
-        TextView cap = text("Paiement sécurisé via Google Play.", 12, evGray(), false);
+        TextView cap = text(evT("secure_pay"), 12, evGray(), false);
         cap.setGravity(Gravity.CENTER);
         cap.setLayoutParams(evLp(93f, 0f, 1f));
         col.addView(cap);
@@ -7705,4 +7741,1063 @@ public class ManaplaceUtils extends AndroidNonvisibleComponent implements Activi
     @SimpleEvent(description = "Déclenché sur le bouton « S'abonner » de l'écran Google Play.")
     public void OnSubscribeClick() {
         EventDispatcher.dispatchEvent(this, "OnSubscribeClick");
+    }
+
+    // =========================================================================
+    // SEVEN : ACCUEIL (bouton + billets), PAGES RÉGLAGES, LANGUE, SON DU SCAN
+    // =========================================================================
+    private String addEvOffFont = "";
+    private String addEvOffChar = "";
+    private String addEvOffMsg = "";
+    private int addEvOffColor = Color.WHITE;
+    private String addEvOffPos = "top";
+    private float addEvOffOffset = 5f;
+    private int addEvOffMs = 2500;
+    private boolean addEvBusy = false;
+
+    private boolean evHasInternet() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return false;
+            if (android.os.Build.VERSION.SDK_INT >= 23) {
+                android.net.Network n = cm.getActiveNetwork();
+                if (n == null) return false;
+                android.net.NetworkCapabilities c = cm.getNetworkCapabilities(n);
+                return c != null
+                        && c.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        && c.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+            }
+            android.net.NetworkInfo ni = cm.getActiveNetworkInfo();
+            return ni != null && ni.isConnected();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private View evDashLineC(int color) {
+        View v = new View(context);
+        v.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.LINE);
+        g.setStroke(dp(2), color, dp(6), dp(4));
+        v.setBackground(g);
+        return v;
+    }
+
+    @SimpleFunction(description = "Règle la notification affichée par le bouton « Ajouter un événement » quand il n'y a pas d'internet : police d'icônes, caractère de l'icône, couleur de l'icône, message, position (top ou bottom), décalage en %, durée en ms.")
+    public void SetAddEventOfflineNotice(String fontPath, String unicodeChar, int iconColor, String message,
+                                         String position, float offsetPercent, int durationMs) {
+        addEvOffFont = fontPath == null ? "" : fontPath;
+        addEvOffChar = unicodeChar == null ? "" : unicodeChar;
+        addEvOffColor = iconColor;
+        if (message != null && !message.isEmpty()) addEvOffMsg = message;
+        if (position != null && !position.isEmpty()) addEvOffPos = position;
+        addEvOffOffset = offsetPercent;
+        addEvOffMs = durationMs <= 0 ? 2500 : durationMs;
+    }
+
+    @SimpleFunction(description = "Construit le bouton « Ajouter un événement » (7 % x 95 %) dans l'arrangement donné. label vide = texte traduit automatiquement. iconGlyph = caractère Phosphor (ex. circle-dashed). Au clic : cercle de progression, vérification d'internet, puis OnAddEventClick (connecté) ou notification + OnAddEventOffline (pas de connexion).")
+    public void BuildAddEventButton(final AndroidViewComponent container, final String label, final String iconGlyph) {
+        if (container == null || container.getView() == null) {
+            OnError("BuildAddEventButton: conteneur invalide.");
+            return;
+        }
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ViewGroup target = realLayout(container);
+                    if (target == null) {
+                        OnError("BuildAddEventButton: conteneur invalide.");
+                        return;
+                    }
+                    addEvTarget = target;
+                    addEvLabel = label == null ? "" : label;
+                    addEvGlyph = iconGlyph == null ? "" : iconGlyph;
+                    evBuildAddButton();
+                } catch (Exception e) {
+                    OnError("BuildAddEventButton: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void evBuildAddButton() {
+        if (addEvTarget == null) return;
+        ViewGroup target = addEvTarget;
+        target.removeAllViews();
+        evApplyDir(target);
+        if (target instanceof LinearLayout) ((LinearLayout) target).setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout btn = new LinearLayout(context);
+        btn.setOrientation(LinearLayout.HORIZONTAL);
+        btn.setGravity(Gravity.CENTER);
+        btn.setBackground(evBg(evCard(), 0, evCard(), evRadius()));
+        FrameLayout holder = new FrameLayout(context);
+        final TextView ic = evIcon(addEvGlyph, "+", 24, Color.WHITE);
+        final android.widget.ProgressBar pb = new android.widget.ProgressBar(context);
+        pb.setIndeterminate(true);
+        pb.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+        pb.setVisibility(View.GONE);
+        holder.addView(ic, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        holder.addView(pb, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        hlp.setMarginEnd(wp(3f));
+        btn.addView(holder, hlp);
+        btn.addView(text(addEvLabel.isEmpty() ? evT("add_event") : addEvLabel, 16, Color.WHITE, true));
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                addEvClicked(ic, pb);
+            }
+        });
+        if (target instanceof LinearLayout) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(wp(95f), hp(7f));
+            lp.gravity = Gravity.CENTER_HORIZONTAL;
+            target.addView(btn, lp);
+        } else {
+            target.addView(btn, new ViewGroup.LayoutParams(wp(95f), hp(7f)));
+        }
+    }
+
+    private void addEvClicked(final TextView ic, final android.widget.ProgressBar pb) {
+        if (addEvBusy) return;
+        addEvBusy = true;
+        ic.setVisibility(View.INVISIBLE);
+        pb.setVisibility(View.VISIBLE);
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = evHasInternet();
+                pb.setVisibility(View.GONE);
+                ic.setVisibility(View.VISIBLE);
+                addEvBusy = false;
+                if (ok) {
+                    OnAddEventClick();
+                } else {
+                    String m = addEvOffMsg.isEmpty() ? evT("offline") : addEvOffMsg;
+                    ShowNotifier(addEvOffFont, addEvOffChar, addEvOffColor, m,
+                            addEvOffPos, addEvOffOffset, addEvOffMs);
+                    OnAddEventOffline(m);
+                }
+            }
+        }, 600);
+    }
+
+    @SimpleEvent(description = "Déclenché quand l'utilisateur appuie sur « Ajouter un événement » et qu'internet est disponible : ouvre ici l'arrangement concerné.")
+    public void OnAddEventClick() {
+        EventDispatcher.dispatchEvent(this, "OnAddEventClick");
+    }
+
+    @SimpleEvent(description = "Déclenché quand l'utilisateur appuie sur « Ajouter un événement » sans connexion internet (la notification est déjà affichée).")
+    public void OnAddEventOffline(String message) {
+        EventDispatcher.dispatchEvent(this, "OnAddEventOffline", message);
+    }
+
+    // ---------------------------- Billets blancs -----------------------------
+    private static class EvTicketViews {
+        TextView count;
+        ImageView barcode;
+    }
+
+    private final java.util.HashMap<String, EvTicketViews> evTickets =
+            new java.util.HashMap<String, EvTicketViews>();
+
+    @SimpleFunction(description = "Ajoute un billet blanc (37 % x 80 %) dans l'arrangement donné : image, pointillé, nom (16), date et heure (14), distribués/total (14, ex. 99/100) et un espace réservé au code-barres (voir SetTicketBarcode). À appeler une fois par événement enregistré.")
+    public void AddTicketCard(final AndroidViewComponent container, final String ticketId, final String imageUri,
+                              final String name, final String date, final String time,
+                              final int distributed, final int total) {
+        if (container == null || container.getView() == null) {
+            OnError("AddTicketCard: conteneur invalide.");
+            return;
+        }
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ViewGroup target = realLayout(container);
+                    if (target == null) {
+                        OnError("AddTicketCard: conteneur invalide.");
+                        return;
+                    }
+                    final int cardH = hp(37f);
+                    final int pad = dp(8);
+                    FrameLayout card = new FrameLayout(context);
+                    card.setBackground(evBg(Color.WHITE, 0, Color.WHITE, dpToPx(16)));
+                    LinearLayout inner = new LinearLayout(context);
+                    inner.setOrientation(LinearLayout.VERTICAL);
+                    inner.setPadding(pad, pad, pad, pad);
+
+                    ImageView img = new ImageView(context);
+                    img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    img.setBackgroundColor(Color.rgb(0xE8, 0xE8, 0xE8));
+                    img.setOutlineProvider(new ViewOutlineProvider() {
+                        @Override
+                        public void getOutline(View view, Outline outline) {
+                            outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dpToPx(8));
+                        }
+                    });
+                    img.setClipToOutline(true);
+                    inner.addView(img, new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, 0, 5f));
+                    if (imageUri != null && !imageUri.isEmpty()) loadImageAsync(img, imageUri);
+
+                    LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, dp(2));
+                    slp.topMargin = dp(8);
+                    slp.bottomMargin = dp(8);
+                    inner.addView(evDashLineC(Color.BLACK), slp);
+
+                    LinearLayout info = new LinearLayout(context);
+                    info.setOrientation(LinearLayout.HORIZONTAL);
+                    info.setPadding(dp(6), 0, dp(6), 0);
+                    info.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, 0, 3.3f));
+                    LinearLayout left = new LinearLayout(context);
+                    left.setOrientation(LinearLayout.VERTICAL);
+                    left.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                    TextView nm = text(name == null ? "" : name, 16, Color.BLACK, true);
+                    nm.setSingleLine(true);
+                    nm.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    left.addView(nm);
+                    left.addView(text(date == null ? "" : date, 14, Color.BLACK, false));
+                    left.addView(text(time == null ? "" : time, 14, Color.BLACK, false));
+                    info.addView(left);
+                    LinearLayout right = new LinearLayout(context);
+                    right.setOrientation(LinearLayout.VERTICAL);
+                    right.setGravity(Gravity.END);
+                    ImageView bar = new ImageView(context);
+                    bar.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    right.addView(bar, new LinearLayout.LayoutParams(wp(30f), hp(5f)));
+                    TextView cnt = text(distributed + "/" + total, 14, Color.BLACK, true);
+                    cnt.setGravity(Gravity.END);
+                    right.addView(cnt);
+                    info.addView(right);
+                    inner.addView(info);
+                    card.addView(inner, new FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+                    // encoches rondes de chaque côté du pointillé
+                    float avail = cardH - 2 * pad - dp(2) - dp(16);
+                    int notchTop = pad + (int) (avail * 5f / 8.3f);
+                    for (int k = 0; k < 2; k++) {
+                        View n = new View(context);
+                        GradientDrawable ng = new GradientDrawable();
+                        ng.setShape(GradientDrawable.OVAL);
+                        ng.setColor(evBlack());
+                        n.setBackground(ng);
+                        FrameLayout.LayoutParams nlp = new FrameLayout.LayoutParams(dp(18), dp(18));
+                        nlp.gravity = (k == 0 ? Gravity.START : Gravity.END) | Gravity.TOP;
+                        nlp.topMargin = notchTop;
+                        if (k == 0) nlp.leftMargin = -dp(9);
+                        else nlp.rightMargin = -dp(9);
+                        card.addView(n, nlp);
+                    }
+                    final String id = ticketId == null ? "" : ticketId;
+                    card.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            OnTicketClick(id);
+                        }
+                    });
+                    EvTicketViews tv = new EvTicketViews();
+                    tv.count = cnt;
+                    tv.barcode = bar;
+                    evTickets.put(id, tv);
+
+                    if (target instanceof LinearLayout) {
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(wp(80f), cardH);
+                        lp.gravity = Gravity.CENTER_HORIZONTAL;
+                        lp.topMargin = hp(2f);
+                        target.addView(card, lp);
+                    } else {
+                        target.addView(card, new ViewGroup.LayoutParams(wp(80f), cardH));
+                    }
+                } catch (Exception e) {
+                    OnError("AddTicketCard: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Affiche le code-barres (lien http, content:// ou chemin) dans l'espace réservé du billet ticketId.")
+    public void SetTicketBarcode(final String ticketId, final String imageUri) {
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                EvTicketViews v = evTickets.get(ticketId);
+                if (v != null && v.barcode != null && imageUri != null && !imageUri.isEmpty())
+                    loadImageAsync(v.barcode, imageUri);
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Met à jour le compteur « distribués/total » (ex. 99/100) du billet ticketId.")
+    public void UpdateTicketCount(final String ticketId, final int distributed, final int total) {
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                EvTicketViews v = evTickets.get(ticketId);
+                if (v != null && v.count != null) v.count.setText(distributed + "/" + total);
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Supprime tous les billets affichés dans l'arrangement donné.")
+    public void ClearTickets(final AndroidViewComponent container) {
+        if (container == null || container.getView() == null) return;
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                ViewGroup target = realLayout(container);
+                if (target != null) target.removeAllViews();
+                evTickets.clear();
+            }
+        });
+    }
+
+    @SimpleEvent(description = "Déclenché quand l'utilisateur appuie sur un billet blanc.")
+    public void OnTicketClick(String ticketId) {
+        EventDispatcher.dispatchEvent(this, "OnTicketClick", ticketId);
+    }
+
+    // ------------------------ Pages réglages et langue -----------------------
+    private LinearLayout evSheet(ViewGroup target, String title) {
+        target.removeAllViews();
+        evApplyDir(target);
+        ScrollView sv = new ScrollView(context);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout col = new LinearLayout(context);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(wp(6f), 0, wp(6f), hp(3f));
+        sv.addView(col, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        target.addView(sv, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // ligne horizontale (poignée) en haut
+        View handle = new View(context);
+        GradientDrawable hg = new GradientDrawable();
+        hg.setColor(Color.rgb(0x6B, 0x6B, 0x6B));
+        hg.setCornerRadius(dpToPx(3));
+        handle.setBackground(hg);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(wp(13f), dp(4));
+        hlp.gravity = Gravity.CENTER_HORIZONTAL;
+        hlp.topMargin = hp(1.5f);
+        col.addView(handle, hlp);
+        TextView t = text(title == null ? "" : title, 18, evGray(), true);
+        t.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = hp(1f);
+        col.addView(t, tlp);
+        return col;
+    }
+
+    @SimpleFunction(description = "Construit une page de réglages (Sécurité, Notification, Profil…) avec uniquement des textes dans l'arrangement donné : ligne horizontale du haut, titre de page (18, gris), puis chaque ligne de itemsJson. itemsJson = liste JSON d'objets {\"id\":\"\",\"title\":\"\",\"description\":\"\",\"value\":\"\",\"valueColor\":\"gray\",\"icon\":\"\"} (seul title est obligatoire). Titres 18, descriptions 13 gris #9E9E9E. Un clic sur une ligne déclenche OnSettingsItemClick(id).")
+    public void BuildSettingsPage(final AndroidViewComponent container, final String pageTitle, final String itemsJson) {
+        if (container == null || container.getView() == null) {
+            OnError("BuildSettingsPage: conteneur invalide.");
+            return;
+        }
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ViewGroup target = realLayout(container);
+                    if (target == null) {
+                        OnError("BuildSettingsPage: conteneur invalide.");
+                        return;
+                    }
+                    LinearLayout col = evSheet(target, pageTitle);
+                    org.json.JSONArray arr = new org.json.JSONArray(itemsJson);
+                    for (int i = 0; i < arr.length(); i++) {
+                        org.json.JSONObject o = arr.getJSONObject(i);
+                        evSettingsRow(col, o.optString("id", ""), o.optString("title", ""),
+                                o.optString("description", ""), o.optString("value", ""),
+                                o.optString("valueColor", "white"), o.optString("icon", ""),
+                                o.optBoolean("toggle", false));
+                    }
+                } catch (Exception e) {
+                    OnError("BuildSettingsPage: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void evSettingsRow(LinearLayout col, final String id, String title, String desc,
+                               String value, String valueColor, String icon, boolean reserve) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.topMargin = hp(3f);
+        row.setLayoutParams(rlp);
+        LinearLayout head = new LinearLayout(context);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        if (reserve) head.setPaddingRelative(0, 0, wp(18f), 0);
+        boolean hasValue = value != null && !value.isEmpty();
+        boolean iconNext = !hasValue && icon != null && !icon.isEmpty();
+        TextView t = text(title, 18, Color.WHITE, true);
+        t.setLayoutParams(hasValue || iconNext
+                ? new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                : new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(t);
+        if (hasValue) {
+            TextView v = text(value, 18, "gray".equalsIgnoreCase(valueColor) ? evGray() : Color.WHITE, true);
+            v.setGravity(Gravity.END);
+            LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            vlp.leftMargin = wp(4f);
+            head.addView(v, vlp);
+        }
+        if (icon != null && !icon.isEmpty()) {
+            TextView ic = evIcon(icon, "", 22, Color.WHITE);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            ilp.leftMargin = wp(3f);
+            head.addView(ic, ilp);
+        }
+        row.addView(head);
+        if (desc != null && !desc.isEmpty()) {
+            TextView d = text(desc, 13, evGray(), false);
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            dlp.topMargin = hp(0.6f);
+            row.addView(d, dlp);
+        }
+        if (id != null && !id.isEmpty()) {
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    evRowClicked(id);
+                }
+            });
+        }
+        col.addView(row);
+    }
+
+    @SimpleEvent(description = "Déclenché quand l'utilisateur appuie sur une ligne de BuildSettingsPage ayant un id.")
+    public void OnSettingsItemClick(String id) {
+        EventDispatcher.dispatchEvent(this, "OnSettingsItemClick", id);
+    }
+
+    // ------------------------------ Son du scan -------------------------------
+    private String scanSoundOk = "";
+    private String scanSoundFail = "";
+    private boolean scanSoundEnabled = true;
+
+    @SimpleFunction(description = "Définit les sons du scan : fichier du bip « billet valide » et fichier du bip « billet refusé » (Assets ou chemin).")
+    public void SetScanSounds(String okSoundFile, String failSoundFile) {
+        scanSoundOk = okSoundFile == null ? "" : okSoundFile.trim();
+        scanSoundFail = failSoundFile == null ? "" : failSoundFile.trim();
+    }
+
+    @SimpleFunction(description = "Active ou désactive les sons de numérisation (réglage Notification).")
+    public void SetScanSoundEnabled(boolean enabled) {
+        scanSoundEnabled = enabled;
+    }
+
+    @SimpleFunction(description = "Joue le bip du scan : valide = vrai pour un billet accepté, faux pour un billet refusé ou déjà scanné. Ne joue rien si les sons sont désactivés.")
+    public void PlayScanResult(boolean valid) {
+        if (!scanSoundEnabled) return;
+        String f = valid ? scanSoundOk : scanSoundFail;
+        if (!f.isEmpty()) PlayCustomSound(f);
+    }
+
+    // =========================================================================
+    // LANGUES (dans le code) : fr, en, es, ht, pt, ar, de, it, zh
+    // Toutes les phrases des écrans Seven passent par evT("clé").
+    // =========================================================================
+    private static final String[] EV_LANGS = {"fr", "en", "es", "ht", "pt", "ar", "de", "it", "zh"};
+
+    private static final String[][] EV_I18N = {
+        {"premium_btn", "Passer à Premium", "Go Premium", "Pasar a Premium", "Pase Premium", "Mudar para Premium", "الترقية إلى بريميوم", "Auf Premium upgraden", "Passa a Premium", "升级到高级版"},
+        {"premium_on", "Premium actif", "Premium active", "Premium activo", "Premium aktif", "Premium ativo", "بريميوم مفعّل", "Premium aktiv", "Premium attivo", "高级版已开通"},
+        {"free_offer", "Offre gratuite", "Free plan", "Plan gratuito", "Ofri gratis", "Plano gratuito", "العرض المجاني", "Kostenloses Angebot", "Offerta gratuita", "免费版"},
+        {"premium_sub", "Billets illimités · expiration personnalisable.", "Unlimited tickets · custom expiry.", "Entradas ilimitadas · caducidad personalizable.", "Tikè san limit · dat ekspirasyon pèsonalize.", "Ingressos ilimitados · validade personalizável.", "تذاكر غير محدودة · انتهاء صلاحية مخصص.", "Unbegrenzte Tickets · individuelles Ablaufdatum.", "Biglietti illimitati · scadenza personalizzabile.", "不限票数 · 自定义有效期。"},
+        {"free_sub", "Vos billets restent 3 jours sur le serveur.", "Your tickets stay on the server for 3 days.", "Tus entradas permanecen 3 días en el servidor.", "Tikè w yo rete 3 jou sou sèvè a.", "Seus ingressos ficam 3 dias no servidor.", "تبقى تذاكرك على الخادم لمدة 3 أيام.", "Deine Tickets bleiben 3 Tage auf dem Server.", "I tuoi biglietti restano 3 giorni sul server.", "您的票券将在服务器上保留3天。"},
+        {"add_image", "Ajouter l’image du billet", "Add the ticket image", "Añadir la imagen de la entrada", "Ajoute imaj tikè a", "Adicionar a imagem do ingresso", "إضافة صورة التذكرة", "Ticketbild hinzufügen", "Aggiungi l’immagine del biglietto", "添加票券图片"},
+        {"png_jpg", "PNG ou JPG", "PNG or JPG", "PNG o JPG", "PNG oswa JPG", "PNG ou JPG", "PNG أو JPG", "PNG oder JPG", "PNG o JPG", "PNG 或 JPG"},
+        {"media", "MÉDIA", "MEDIA", "MEDIOS", "MEDYA", "MÍDIA", "الوسائط", "MEDIEN", "MEDIA", "媒体"},
+        {"media_sub", "Ajoutez le visuel officiel ou l’affiche de votre événement.", "Add the official visual or poster of your event.", "Añade el visual oficial o el cartel de tu evento.", "Ajoute vizyèl ofisyèl la oswa afich evènman w lan.", "Adicione o visual oficial ou o cartaz do seu evento.", "أضف الصورة الرسمية أو ملصق فعاليتك.", "Füge das offizielle Bild oder Plakat deiner Veranstaltung hinzu.", "Aggiungi l’immagine ufficiale o la locandina del tuo evento.", "添加活动的官方图片或海报。"},
+        {"ev_name", "Nom de l’événement", "Event name", "Nombre del evento", "Non evènman an", "Nome do evento", "اسم الفعالية", "Name der Veranstaltung", "Nome dell’evento", "活动名称"},
+        {"ev_name_sub", "Donnez un titre clair et accrocheur à votre événement.", "Give your event a clear, catchy title.", "Dale a tu evento un título claro y atractivo.", "Bay evènman w lan yon tit klè ki atire moun.", "Dê ao seu evento um título claro e atraente.", "اختر عنواناً واضحاً وجذاباً لفعاليتك.", "Gib deiner Veranstaltung einen klaren, ansprechenden Titel.", "Dai al tuo evento un titolo chiaro e accattivante.", "为您的活动起一个清晰、吸引人的标题。"},
+        {"ev_name_hint", "Ex. Soirée Kompa Night", "E.g. Kompa Night Party", "Ej. Noche de Kompa", "Egz. Swaré Kompa Night", "Ex. Noite de Kompa", "مثال: ليلة كومبا", "z. B. Kompa-Nacht", "Es. Serata Kompa Night", "例如：Kompa 之夜"},
+        {"tk_name", "Nom du ticket", "Ticket name", "Nombre de la entrada", "Non tikè a", "Nome do ingresso", "اسم التذكرة", "Ticketname", "Nome del biglietto", "票券名称"},
+        {"tk_name_sub", "Nommez votre type de billet.", "Name your ticket type.", "Nombra tu tipo de entrada.", "Bay tip tikè w la yon non.", "Dê um nome ao seu tipo de ingresso.", "سمِّ نوع تذكرتك.", "Benenne deinen Tickettyp.", "Dai un nome al tuo tipo di biglietto.", "为您的票种命名。"},
+        {"premium_only", "Disponible avec Premium", "Available with Premium", "Disponible con Premium", "Disponib ak Premium", "Disponível com Premium", "متاح مع بريميوم", "Mit Premium verfügbar", "Disponibile con Premium", "高级版可用"},
+        {"tk_name_hint", "Ex. VIP, Standard", "E.g. VIP, Standard", "Ej. VIP, Estándar", "Egz. VIP, Estanda", "Ex. VIP, Padrão", "مثال: VIP، عادي", "z. B. VIP, Standard", "Es. VIP, Standard", "例如：VIP、普通"},
+        {"tk_count", "Nombre de tickets", "Number of tickets", "Número de entradas", "Kantite tikè", "Número de ingressos", "عدد التذاكر", "Anzahl der Tickets", "Numero di biglietti", "票券数量"},
+        {"tk_count_sub", "Ajoutez le nombre de tickets que vous souhaitez enregistrer.", "Enter the number of tickets you want to register.", "Añade el número de entradas que quieres registrar.", "Antre kantite tikè ou vle anrejistre yo.", "Informe o número de ingressos que deseja registrar.", "أدخل عدد التذاكر التي تريد تسجيلها.", "Gib die Anzahl der Tickets ein, die du registrieren möchtest.", "Inserisci il numero di biglietti che vuoi registrare.", "输入您要登记的票券数量。"},
+        {"tk_count_hint", "Ex. 100", "E.g. 100", "Ej. 100", "Egz. 100", "Ex. 100", "مثال: 100", "z. B. 100", "Es. 100", "例如：100"},
+        {"ev_date", "Date de l’événement", "Event date", "Fecha del evento", "Dat evènman an", "Data do evento", "تاريخ الفعالية", "Datum der Veranstaltung", "Data dell’evento", "活动日期"},
+        {"ev_date_sub", "Indiquez le jour et l’heure du début de l’événement.", "Enter the day and start time of the event.", "Indica el día y la hora de inicio del evento.", "Make jou ak lè evènman an kòmanse.", "Informe o dia e a hora de início do evento.", "حدد يوم وساعة بدء الفعالية.", "Gib Tag und Startzeit der Veranstaltung an.", "Indica il giorno e l’ora di inizio dell’evento.", "请填写活动的日期和开始时间。"},
+        {"date_hint", "JJ/MM/AAAA", "DD/MM/YYYY", "DD/MM/AAAA", "JJ/MM/AAAA", "DD/MM/AAAA", "يوم/شهر/سنة", "TT/MM/JJJJ", "GG/MM/AAAA", "日/月/年"},
+        {"time_hint", "HH:MM", "HH:MM", "HH:MM", "HH:MM", "HH:MM", "ساعة:دقيقة", "HH:MM", "HH:MM", "时:分"},
+        {"exp", "Expiration du billet", "Ticket expiry", "Caducidad de la entrada", "Ekspirasyon tikè a", "Validade do ingresso", "انتهاء صلاحية التذكرة", "Ablauf des Tickets", "Scadenza del biglietto", "票券有效期"},
+        {"exp_sub", "Passé cette date, les billets ne seront plus valides pour le scan.", "After this date, tickets will no longer be valid for scanning.", "Pasada esta fecha, las entradas ya no serán válidas para el escaneo.", "Apre dat sa a, tikè yo p ap valab ankò pou eskane.", "Após esta data, os ingressos não serão mais válidos para leitura.", "بعد هذا التاريخ لن تكون التذاكر صالحة للمسح.", "Nach diesem Datum sind die Tickets für den Scan nicht mehr gültig.", "Dopo questa data i biglietti non saranno più validi per la scansione.", "过了此日期，票券将无法再扫描验证。"},
+        {"create", "Créer l’événement", "Create event", "Crear evento", "Kreye evènman an", "Criar evento", "إنشاء الفعالية", "Veranstaltung erstellen", "Crea evento", "创建活动"},
+        {"create_sub", "Un QR code dynamique et unique est attribué à chaque billet.", "A unique, dynamic QR code is assigned to each ticket.", "Se asigna un código QR dinámico y único a cada entrada.", "Chak tikè resevwa yon kòd QR inik ki chanje.", "Um código QR dinâmico e único é atribuído a cada ingresso.", "يُخصَّص رمز QR ديناميكي وفريد لكل تذكرة.", "Jedem Ticket wird ein einzigartiger, dynamischer QR-Code zugewiesen.", "A ogni biglietto viene assegnato un codice QR dinamico e unico.", "每张票券都会分配唯一的动态二维码。"},
+        {"err_image", "Ajoutez l’image du billet.", "Add the ticket image.", "Añade la imagen de la entrada.", "Ajoute imaj tikè a.", "Adicione a imagem do ingresso.", "أضف صورة التذكرة.", "Füge das Ticketbild hinzu.", "Aggiungi l’immagine del biglietto.", "请添加票券图片。"},
+        {"err_name", "Indiquez le nom de l’événement.", "Enter the event name.", "Indica el nombre del evento.", "Make non evènman an.", "Informe o nome do evento.", "أدخل اسم الفعالية.", "Gib den Namen der Veranstaltung ein.", "Inserisci il nome dell’evento.", "请输入活动名称。"},
+        {"err_ticket", "Indiquez le nom du ticket.", "Enter the ticket name.", "Indica el nombre de la entrada.", "Make non tikè a.", "Informe o nome do ingresso.", "أدخل اسم التذكرة.", "Gib den Ticketnamen ein.", "Inserisci il nome del biglietto.", "请输入票券名称。"},
+        {"err_count", "Indiquez le nombre de tickets.", "Enter the number of tickets.", "Indica el número de entradas.", "Make kantite tikè yo.", "Informe o número de ingressos.", "أدخل عدد التذاكر.", "Gib die Anzahl der Tickets ein.", "Inserisci il numero di biglietti.", "请输入票券数量。"},
+        {"err_date", "Choisissez la date de l’événement.", "Choose the event date.", "Elige la fecha del evento.", "Chwazi dat evènman an.", "Escolha a data do evento.", "اختر تاريخ الفعالية.", "Wähle das Datum der Veranstaltung.", "Scegli la data dell’evento.", "请选择活动日期。"},
+        {"err_time", "Choisissez l’heure de l’événement.", "Choose the event time.", "Elige la hora del evento.", "Chwazi lè evènman an.", "Escolha a hora do evento.", "اختر وقت الفعالية.", "Wähle die Uhrzeit der Veranstaltung.", "Scegli l’ora dell’evento.", "请选择活动时间。"},
+        {"sub_title", "Des billets sans limite", "Unlimited tickets", "Entradas sin límite", "Tikè san limit", "Ingressos sem limite", "تذاكر بلا حدود", "Tickets ohne Limit", "Biglietti senza limiti", "不限量票券"},
+        {"sub_sub", "Débloquez toutes les fonctions de Seven.", "Unlock all Seven features.", "Desbloquea todas las funciones de Seven.", "Debloke tout fonksyon Seven yo.", "Desbloqueie todos os recursos do Seven.", "افتح جميع ميزات Seven.", "Schalte alle Funktionen von Seven frei.", "Sblocca tutte le funzioni di Seven.", "解锁 Seven 的全部功能。"},
+        {"perk1", "Billets illimités", "Unlimited tickets", "Entradas ilimitadas", "Tikè san limit", "Ingressos ilimitados", "تذاكر غير محدودة", "Unbegrenzte Tickets", "Biglietti illimitati", "不限票数"},
+        {"perk2", "Expiration du billet personnalisable", "Custom ticket expiry", "Caducidad de la entrada personalizable", "Ekspirasyon tikè pèsonalize", "Validade do ingresso personalizável", "انتهاء صلاحية مخصص للتذكرة", "Individuelles Ablaufdatum", "Scadenza del biglietto personalizzabile", "自定义票券有效期"},
+        {"perk3", "Nom du ticket personnalisable", "Custom ticket name", "Nombre de entrada personalizable", "Non tikè pèsonalize", "Nome do ingresso personalizável", "اسم مخصص للتذكرة", "Individueller Ticketname", "Nome del biglietto personalizzabile", "自定义票券名称"},
+        {"subscription", "Abonnement", "Subscription", "Suscripción", "Abònman", "Assinatura", "الاشتراك", "Abonnement", "Abbonamento", "订阅"},
+        {"per_month", "par mois", "per month", "al mes", "pa mwa", "por mês", "شهرياً", "pro Monat", "al mese", "每月"},
+        {"pay_method", "Moyen de paiement", "Payment method", "Método de pago", "Metòd peman", "Forma de pagamento", "طريقة الدفع", "Zahlungsmethode", "Metodo di pagamento", "支付方式"},
+        {"recap", "Récapitulatif", "Summary", "Resumen", "Rezime", "Resumo", "الملخص", "Zusammenfassung", "Riepilogo", "摘要"},
+        {"price", "Prix", "Price", "Precio", "Pri", "Preço", "السعر", "Preis", "Prezzo", "价格"},
+        {"renewal", "Renouvellement", "Renewal", "Renovación", "Renouvèlman", "Renovação", "التجديد", "Verlängerung", "Rinnovo", "续订"},
+        {"renew_monthly", "Tous les mois", "Every month", "Cada mes", "Chak mwa", "Todo mês", "كل شهر", "Jeden Monat", "Ogni mese", "每月"},
+        {"google_account", "Compte Google", "Google account", "Cuenta de Google", "Kont Google", "Conta Google", "حساب Google", "Google-Konto", "Account Google", "Google 账号"},
+        {"cancel_info", "Annulable à tout moment dans Google Play. Le paiement est géré par votre compte Google.", "Cancel anytime in Google Play. Payment is handled by your Google account.", "Cancela cuando quieras en Google Play. El pago lo gestiona tu cuenta de Google.", "Ou ka anile nenpòt lè nan Google Play. Kont Google ou jere peman an.", "Cancele a qualquer momento no Google Play. O pagamento é gerido pela sua conta Google.", "يمكن الإلغاء في أي وقت من Google Play. تتم إدارة الدفع عبر حساب Google الخاص بك.", "Jederzeit in Google Play kündbar. Die Zahlung wird über dein Google-Konto abgewickelt.", "Annullabile in qualsiasi momento su Google Play. Il pagamento è gestito dal tuo account Google.", "可随时在 Google Play 取消。付款由您的 Google 账号处理。"},
+        {"subscribe_btn", "S’abonner · %s avec Google Play", "Subscribe · %s with Google Play", "Suscribirse · %s con Google Play", "Abòne · %s ak Google Play", "Assinar · %s com Google Play", "اشترك · %s عبر Google Play", "Abonnieren · %s mit Google Play", "Abbonati · %s con Google Play", "订阅 · %s（通过 Google Play）"},
+        {"secure_pay", "Paiement sécurisé via Google Play.", "Secure payment via Google Play.", "Pago seguro con Google Play.", "Peman an sekirite via Google Play.", "Pagamento seguro via Google Play.", "دفع آمن عبر Google Play.", "Sichere Zahlung über Google Play.", "Pagamento sicuro tramite Google Play.", "通过 Google Play 安全支付。"},
+        {"add_event", "Ajouter un événement", "Add an event", "Añadir un evento", "Ajoute yon evènman", "Adicionar um evento", "إضافة فعالية", "Veranstaltung hinzufügen", "Aggiungi un evento", "添加活动"},
+        {"offline", "Pas de connexion internet.", "No internet connection.", "Sin conexión a internet.", "Pa gen koneksyon entènèt.", "Sem conexão com a internet.", "لا يوجد اتصال بالإنترنت.", "Keine Internetverbindung.", "Nessuna connessione internet.", "没有网络连接。"},
+        {"security", "Sécurité", "Security", "Seguridad", "Sekirite", "Segurança", "الأمان", "Sicherheit", "Sicurezza", "安全"},
+        {"app_lock", "Verrouillage de l’application", "App lock", "Bloqueo de la aplicación", "Vèrouyaj aplikasyon an", "Bloqueio do aplicativo", "قفل التطبيق", "App-Sperre", "Blocco dell’app", "应用锁"},
+        {"app_lock_sub", "Exiger votre mot de passe ou l’empreinte digitale pour ouvrir l’application.", "Require your password or fingerprint to open the app.", "Exigir tu contraseña o huella digital para abrir la aplicación.", "Mande modpas ou oswa anprent dijital ou pou louvri aplikasyon an.", "Exigir sua senha ou impressão digital para abrir o aplicativo.", "طلب كلمة المرور أو بصمة الإصبع لفتح التطبيق.", "Passwort oder Fingerabdruck zum Öffnen der App verlangen.", "Richiedi la password o l’impronta digitale per aprire l’app.", "打开应用时需要输入密码或指纹。"},
+        {"two_fa", "Authentification à deux facteurs", "Two-factor authentication", "Autenticación en dos pasos", "Otantifikasyon de faktè", "Autenticação em duas etapas", "المصادقة الثنائية", "Zwei-Faktor-Authentifizierung", "Autenticazione a due fattori", "双重验证"},
+        {"two_fa_sub", "Ajouter une étape de sécurité pour protéger l’accès à vos billetteries.", "Add a security step to protect access to your ticketing.", "Añade un paso de seguridad para proteger el acceso a tus entradas.", "Ajoute yon etap sekirite pou pwoteje aksè ak biyetri w yo.", "Adicione uma etapa de segurança para proteger o acesso às suas bilheterias.", "أضف خطوة أمان لحماية الوصول إلى تذاكرك.", "Füge einen Sicherheitsschritt hinzu, um den Zugriff auf dein Ticketing zu schützen.", "Aggiungi un passaggio di sicurezza per proteggere l’accesso alla tua biglietteria.", "增加一道安全验证，保护您的票务账户。"},
+        {"notification", "Notification", "Notifications", "Notificaciones", "Notifikasyon", "Notificações", "الإشعارات", "Benachrichtigungen", "Notifiche", "通知"},
+        {"scan_sounds", "Sons de numérisation", "Scan sounds", "Sonidos de escaneo", "Son eskanè", "Sons de leitura", "أصوات المسح", "Scan-Töne", "Suoni di scansione", "扫描提示音"},
+        {"scan_sounds_sub", "Émettre un signal sonore à chaque scan de billet réussi.", "Play a sound each time a ticket is scanned successfully.", "Emitir un sonido en cada escaneo de entrada correcto.", "Fè yon son chak fwa yon tikè eskane avèk siksè.", "Emitir um som a cada leitura de ingresso bem-sucedida.", "إصدار صوت عند كل مسح ناجح للتذكرة.", "Bei jedem erfolgreichen Ticket-Scan einen Ton abspielen.", "Emetti un suono a ogni scansione riuscita del biglietto.", "每次成功扫描票券时播放提示音。"},
+        {"profile", "Profil", "Profile", "Perfil", "Pwofil", "Perfil", "الملف الشخصي", "Profil", "Profilo", "个人资料"},
+        {"personal", "Informations personnelles", "Personal information", "Información personal", "Enfòmasyon pèsonèl", "Informações pessoais", "المعلومات الشخصية", "Persönliche Daten", "Informazioni personali", "个人信息"},
+        {"email", "E-mail", "Email", "Correo electrónico", "Imèl", "E-mail", "البريد الإلكتروني", "E-Mail", "E-mail", "电子邮箱"},
+        {"identifier", "Identifiant", "ID", "Identificador", "Idantifyan", "Identificador", "المعرّف", "Kennung", "Identificativo", "标识符"},
+        {"password", "Mot de passe", "Password", "Contraseña", "Modpas", "Senha", "كلمة المرور", "Passwort", "Password", "密码"},
+        {"change_pw", "modifier le mot de passe", "change password", "cambiar la contraseña", "chanje modpas la", "alterar a senha", "تغيير كلمة المرور", "Passwort ändern", "modifica la password", "修改密码"},
+        {"phone", "Numéro de téléphone", "Phone number", "Número de teléfono", "Nimewo telefòn", "Número de telefone", "رقم الهاتف", "Telefonnummer", "Numero di telefono", "电话号码"},
+        {"add_phone", "Ajouter un numéro de téléphone", "Add a phone number", "Añadir un número de teléfono", "Ajoute yon nimewo telefòn", "Adicionar um número de telefone", "إضافة رقم هاتف", "Telefonnummer hinzufügen", "Aggiungi un numero di telefono", "添加电话号码"},
+        {"delete_acc", "Supprimer le compte", "Delete account", "Eliminar la cuenta", "Siprime kont lan", "Excluir a conta", "حذف الحساب", "Konto löschen", "Elimina l’account", "删除账号"},
+        {"delete_warn", "Attention : cette action est irréversible. En supprimant votre compte, vous perdrez définitivement l’accès à votre abonnement Seven Premium, à l’historique de vos événements ainsi qu’à la validation de vos billets en cours.", "Warning: this action is irreversible. By deleting your account, you will permanently lose access to your Seven Premium subscription, your event history and the validation of your current tickets.", "Atención: esta acción es irreversible. Al eliminar tu cuenta, perderás definitivamente el acceso a tu suscripción Seven Premium, al historial de tus eventos y a la validación de tus entradas en curso.", "Atansyon : aksyon sa a pa ka defèt. Si w siprime kont ou, w ap pèdi pou tout tan aksè ak abònman Seven Premium ou, istwa evènman w yo ak validasyon tikè ou yo ki an kou.", "Atenção: esta ação é irreversível. Ao excluir sua conta, você perderá definitivamente o acesso à sua assinatura Seven Premium, ao histórico dos seus eventos e à validação dos seus ingressos em andamento.", "تنبيه: هذا الإجراء لا رجعة فيه. بحذف حسابك ستفقد نهائياً إمكانية الوصول إلى اشتراك Seven Premium وسجل فعالياتك والتحقق من تذاكرك الحالية.", "Achtung: Diese Aktion ist unwiderruflich. Wenn du dein Konto löschst, verlierst du dauerhaft den Zugriff auf dein Seven-Premium-Abonnement, deinen Veranstaltungsverlauf und die Validierung deiner aktuellen Tickets.", "Attenzione: questa azione è irreversibile. Eliminando il tuo account perderai definitivamente l’accesso al tuo abbonamento Seven Premium, alla cronologia dei tuoi eventi e alla convalida dei biglietti in corso.", "注意：此操作不可撤销。删除账号后，您将永久失去 Seven Premium 订阅、活动历史记录以及当前票券验证的访问权限。"},
+        {"logout", "Déconnexion", "Log out", "Cerrar sesión", "Dekonekte", "Sair", "تسجيل الخروج", "Abmelden", "Disconnetti", "退出登录"},
+        {"language", "Langue", "Language", "Idioma", "Lang", "Idioma", "اللغة", "Sprache", "Lingua", "语言"},
+        {"lang_fr", "Français", "French", "Francés", "Fransè", "Francês", "الفرنسية", "Französisch", "Francese", "法语"},
+        {"lang_en", "Anglais", "English", "Inglés", "Angle", "Inglês", "الإنجليزية", "Englisch", "Inglese", "英语"},
+        {"lang_es", "Espagnol", "Spanish", "Español", "Espayòl", "Espanhol", "الإسبانية", "Spanisch", "Spagnolo", "西班牙语"},
+        {"lang_ht", "Créole Haïtien", "Haitian Creole", "Criollo haitiano", "Kreyòl ayisyen", "Crioulo haitiano", "الكريولية الهايتية", "Haitianisches Kreolisch", "Creolo haitiano", "海地克里奥尔语"},
+        {"lang_pt", "Portugais", "Portuguese", "Portugués", "Pòtigè", "Português", "البرتغالية", "Portugiesisch", "Portoghese", "葡萄牙语"},
+        {"lang_ar", "Arabe", "Arabic", "Árabe", "Arab", "Árabe", "العربية", "Arabisch", "Arabo", "阿拉伯语"},
+        {"lang_de", "Allemand", "German", "Alemán", "Alman", "Alemão", "الألمانية", "Deutsch", "Tedesco", "德语"},
+        {"lang_it", "Italien", "Italian", "Italiano", "Italyen", "Italiano", "الإيطالية", "Italienisch", "Italiano", "意大利语"},
+        {"lang_zh", "Chinois", "Chinese", "Chino", "Chinwa", "Chinês", "الصينية", "Chinesisch", "Cinese", "中文"},
+        {"settings", "Paramètres", "Settings", "Ajustes", "Paramèt", "Configurações", "الإعدادات", "Einstellungen", "Impostazioni", "设置"},
+        {"support", "Contacter Assistance", "Contact support", "Contactar con soporte", "Kontakte asistans", "Contactar suporte", "الاتصال بالدعم", "Support kontaktieren", "Contatta l’assistenza", "联系客服"},
+        {"terms", "Conditions d’utilisation", "Terms of use", "Condiciones de uso", "Kondisyon itilizasyon", "Termos de uso", "شروط الاستخدام", "Nutzungsbedingungen", "Condizioni d’uso", "使用条款"},
+        {"privacy", "Politique de confidentialité", "Privacy policy", "Política de privacidad", "Règleman konfidansyalite", "Política de privacidade", "سياسة الخصوصية", "Datenschutzerklärung", "Informativa sulla privacy", "隐私政策"},
+        {"msg_title", "Message", "Message", "Mensaje", "Mesaj", "Mensagem", "الرسالة", "Nachricht", "Messaggio", "消息"},
+        {"msg_delete_warn", "Si vous supprimez ce message de votre historique de chat, l’assistant ne pourra plus le voir dans cette conversation.", "If you delete this message from your chat history, the assistant will no longer be able to see it in this conversation.", "Si eliminas este mensaje de tu historial de chat, el asistente ya no podrá verlo en esta conversación.", "Si w siprime mesaj sa a nan istwa chat ou, asistan an p ap ka wè l ankò nan konvèsasyon sa a.", "Se você excluir esta mensagem do seu histórico de chat, o assistente não poderá mais vê-la nesta conversa.", "إذا حذفت هذه الرسالة من سجل الدردشة، فلن يتمكن المساعد من رؤيتها في هذه المحادثة.", "Wenn du diese Nachricht aus deinem Chatverlauf löschst, kann der Assistent sie in dieser Unterhaltung nicht mehr sehen.", "Se elimini questo messaggio dalla cronologia della chat, l’assistente non potrà più vederlo in questa conversazione.", "如果您从聊天记录中删除此消息，助手将无法在此对话中再看到它。"},
+        {"delete", "Supprimer", "Delete", "Eliminar", "Siprime", "Excluir", "حذف", "Löschen", "Elimina", "删除"},
+        {"cancel", "Annuler", "Cancel", "Cancelar", "Anile", "Cancelar", "إلغاء", "Abbrechen", "Annulla", "取消"},
+        {"today", "Aujourd’hui", "Today", "Hoy", "Jodi a", "Hoje", "اليوم", "Heute", "Oggi", "今天"},
+        {"yesterday", "Hier", "Yesterday", "Ayer", "Yè", "Ontem", "أمس", "Gestern", "Ieri", "昨天"},
+        {"sent", "Envoyé", "Sent", "Enviado", "Voye", "Enviado", "تم الإرسال", "Gesendet", "Inviato", "已发送"},
+        {"seen", "Vu", "Seen", "Visto", "Wè", "Visto", "تمت المشاهدة", "Gesehen", "Visto", "已读"},
+        {"msg_hint", "Message", "Message", "Mensaje", "Mesaj", "Mensagem", "رسالة", "Nachricht", "Messaggio", "消息"},
+        {"negotiating", "Négociation en cours", "Negotiation in progress", "Negociación en curso", "Negosyasyon ap fèt", "Negociação em andamento", "التفاوض جارٍ", "Verhandlung läuft", "Trattativa in corso", "洽谈中"},
+        {"photo", "Photo", "Photo", "Foto", "Foto", "Foto", "صورة", "Foto", "Foto", "照片"}
+    };
+
+    private java.util.HashMap<String, String[]> evDict;
+    private String evLang = null;
+    private ViewGroup evPageTarget;
+    private String evPageKind = "";
+    private String evProfEmail = "";
+    private String evProfId = "";
+    private String evGlyphChevron = "";
+    private String evGlyphCopy = "";
+    private ViewGroup addEvTarget;
+    private String addEvLabel = "";
+    private String addEvGlyph = "";
+
+    private int evLangIndex(String c) {
+        for (int i = 0; i < EV_LANGS.length; i++) if (EV_LANGS[i].equals(c)) return i;
+        return -1;
+    }
+
+    private String evCurrentLang() {
+        if (evLang == null) {
+            try {
+                evLang = context.getSharedPreferences("SevenUtils", Context.MODE_PRIVATE)
+                        .getString("seven_lang", "fr");
+            } catch (Exception e) {
+                evLang = "fr";
+            }
+            if (evLangIndex(evLang) < 0) evLang = "fr";
+        }
+        return evLang;
+    }
+
+    private String evT(String key) {
+        if (evDict == null) {
+            evDict = new java.util.HashMap<String, String[]>();
+            for (String[] r : EV_I18N) evDict.put(r[0], r);
+        }
+        String[] cu = evCustom.get(key);
+        if (cu != null) {
+            int li = evLangIndex(evCurrentLang());
+            String v = li >= 0 ? cu[li] : null;
+            if (v == null || v.isEmpty()) v = cu[0];
+            return v == null || v.isEmpty() ? key : v;
+        }
+        String[] r = evDict.get(key);
+        if (r == null) return key;
+        int i = evLangIndex(evCurrentLang());
+        String s = (i >= 0 && i + 1 < r.length) ? r[i + 1] : null;
+        return s == null || s.isEmpty() ? r[1] : s;
+    }
+
+    private void evApplyDir(ViewGroup g) {
+        if (g != null) g.setLayoutDirection("ar".equals(evCurrentLang())
+                ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
+    }
+
+    private String evPer() {
+        return "mois".equalsIgnoreCase(evSubPeriod) ? evT("per_month") : "par " + evSubPeriod;
+    }
+
+    private String evRenew() {
+        return "mois".equalsIgnoreCase(evSubPeriod) ? evT("renew_monthly") : "Tous les " + evSubPeriod;
+    }
+
+    private void evRefreshAll() {
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (evContainer != null) evRender();
+                    if (evPageTarget != null) evRenderPage();
+                    if (addEvTarget != null) evBuildAddButton();
+                    if (evMenuTarget != null) evRenderMenu();
+                    if (evDelTarget != null) evRenderDelete();
+                    if (chatEdit != null) chatEdit.setHint(evT("msg_hint"));
+                } catch (Exception e) {
+                    OnError("Langue : " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Change la langue de toute l'appli : fr, en, es, ht, pt, ar, de, it ou zh. Elle est mémorisée et les écrans Seven affichés (formulaire, abonnement, bouton, pages) sont redessinés dans la nouvelle langue. L'arabe passe en lecture de droite à gauche.")
+    public void SetAppLanguage(String code) {
+        String c = code == null ? "" : code.trim().toLowerCase(java.util.Locale.ROOT);
+        if (evLangIndex(c) < 0) {
+            OnError("SetAppLanguage: langue inconnue (" + code + ").");
+            return;
+        }
+        evLang = c;
+        try {
+            context.getSharedPreferences("SevenUtils", Context.MODE_PRIVATE)
+                    .edit().putString("seven_lang", c).apply();
+        } catch (Exception ignored) {
+        }
+        evRefreshAll();
+        OnLanguageChanged(c);
+    }
+
+    @SimpleFunction(description = "Retourne le code de la langue actuelle (fr, en, es, ht, pt, ar, de, it, zh). « fr » au premier lancement.")
+    public String GetAppLanguage() {
+        return evCurrentLang();
+    }
+
+    @SimpleFunction(description = "Retourne le texte traduit d'une clé du dictionnaire (ex. offline, err_name, logout) dans la langue actuelle, pour traduire aussi tes propres messages.")
+    public String GetTranslation(String key) {
+        return evT(key == null ? "" : key);
+    }
+
+    @SimpleEvent(description = "Déclenché après un changement de langue (code = fr, en, es, ht, pt, ar, de, it ou zh).")
+    public void OnLanguageChanged(String code) {
+        EventDispatcher.dispatchEvent(this, "OnLanguageChanged", code);
+    }
+
+    @SimpleEvent(description = "Déclenché quand l'utilisateur choisit une langue dans BuildLanguageList (la langue est déjà appliquée).")
+    public void OnLanguageSelected(String code) {
+        EventDispatcher.dispatchEvent(this, "OnLanguageSelected", code);
+    }
+
+    @SimpleFunction(description = "Définit les icônes Phosphor des pages Profil : chevron (flèche vers la droite) et copier. Utilise la police de SetEventIconFont.")
+    public void SetProfileIcons(String chevronGlyph, String copyGlyph) {
+        evGlyphChevron = chevronGlyph == null ? "" : chevronGlyph;
+        evGlyphCopy = copyGlyph == null ? "" : copyGlyph;
+        evRefreshAll();
+    }
+
+    private void evBuildPage(final AndroidViewComponent container, final String kind) {
+        if (container == null || container.getView() == null) {
+            OnError("Page " + kind + ": conteneur invalide.");
+            return;
+        }
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ViewGroup target = realLayout(container);
+                    if (target == null) {
+                        OnError("Page " + kind + ": conteneur invalide.");
+                        return;
+                    }
+                    evPageTarget = target;
+                    evPageKind = kind;
+                    evRenderPage();
+                } catch (Exception e) {
+                    OnError("Page " + kind + ": " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    @SimpleFunction(description = "Affiche la page Sécurité (textes traduits, ligne horizontale du haut) dans l'arrangement donné. Lignes : app_lock (interrupteur à droite : place le tien) et two_fa. Un clic sur une ligne déclenche OnSettingsItemClick(id).")
+    public void BuildSecurityPage(AndroidViewComponent container) {
+        evBuildPage(container, "security");
+    }
+
+    @SimpleFunction(description = "Affiche la page Notification (textes traduits) dans l'arrangement donné. Ligne : scan_sounds (interrupteur à droite : place le tien).")
+    public void BuildNotificationPage(AndroidViewComponent container) {
+        evBuildPage(container, "notification");
+    }
+
+    @SimpleFunction(description = "Affiche la page Profil (textes traduits) avec l'e-mail et l'identifiant donnés. Lignes : email, copy_id (copie l'identifiant), password, phone, delete et le bouton logout : chacune déclenche OnSettingsItemClick(id).")
+    public void BuildProfilePage(AndroidViewComponent container, String email, String userId) {
+        evProfEmail = email == null ? "" : email;
+        evProfId = userId == null ? "" : userId;
+        evBuildPage(container, "profile");
+    }
+
+    @SimpleFunction(description = "Affiche la liste des langues (Français, Anglais, Espagnol, Créole Haïtien, Portugais, Arabe, Allemand, Italien, Chinois) : la langue actuelle est en blanc avec une coche, les autres en gris. Un clic change la langue de toute l'appli.")
+    public void BuildLanguageList(AndroidViewComponent container) {
+        evBuildPage(container, "language");
+    }
+
+    private void evRowClicked(String id) {
+        if ("copy_id".equals(id)) {
+            try {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                        context.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("id", evProfId));
+            } catch (Exception ignored) {
+            }
+        }
+        OnSettingsItemClick(id);
+    }
+
+    private void evRenderPage() {
+        if (evPageTarget == null) return;
+        if ("language".equals(evPageKind)) {
+            evRenderLanguage();
+            return;
+        }
+        if ("security".equals(evPageKind)) {
+            LinearLayout col = evSheet(evPageTarget, evT("security"));
+            evSettingsRow(col, "app_lock", evT("app_lock"), evT("app_lock_sub"), "", "white", "", true);
+            evSettingsRow(col, "two_fa", evT("two_fa"), evT("two_fa_sub"), "", "white", "", false);
+        } else if ("notification".equals(evPageKind)) {
+            LinearLayout col = evSheet(evPageTarget, evT("notification"));
+            evSettingsRow(col, "scan_sounds", evT("scan_sounds"), evT("scan_sounds_sub"), "", "white", "", true);
+        } else if ("profile".equals(evPageKind)) {
+            LinearLayout col = evSheet(evPageTarget, evT("profile"));
+            TextView ph = text(evT("personal"), 18, Color.WHITE, true);
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            plp.topMargin = hp(3f);
+            col.addView(ph, plp);
+            evSettingsRow(col, "email", evT("email"), "", evProfEmail, "white", "", false);
+            evSettingsRow(col, "copy_id", evT("identifier"), "", evProfId, "white",
+                    evGlyphCopy, false);
+            evSettingsRow(col, "password", evT("password"), "", evT("change_pw"), "gray",
+                    evGlyphChevron.isEmpty() ? "›" : evGlyphChevron, false);
+            evSettingsRow(col, "phone", evT("phone"), "", evT("add_phone"), "gray",
+                    evGlyphChevron.isEmpty() ? "›" : evGlyphChevron, false);
+            evSettingsRow(col, "delete", evT("delete_acc"), evT("delete_warn"), "", "white",
+                    evGlyphChevron.isEmpty() ? "›" : evGlyphChevron, false);
+            TextView lo = text(evT("logout"), 18, Color.WHITE, true);
+            lo.setGravity(Gravity.CENTER);
+            lo.setBackground(evBg(Color.rgb(0x2C, 0x2C, 0x2E), 0, Color.TRANSPARENT, dpToPx(24)));
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, hp(7f));
+            llp.topMargin = hp(4f);
+            lo.setLayoutParams(llp);
+            lo.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    OnSettingsItemClick("logout");
+                }
+            });
+            col.addView(lo);
+        }
+    }
+
+    private void evRenderLanguage() {
+        if (evPageTarget == null) return;
+        LinearLayout col = evSheet(evPageTarget, evT("language"));
+        String current = evCurrentLang();
+        for (int i = 0; i < EV_LANGS.length; i++) {
+            final String code = EV_LANGS[i];
+            boolean sel = code.equals(current);
+            LinearLayout row = new LinearLayout(context);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, hp(6f));
+            rlp.topMargin = hp(1f);
+            row.setLayoutParams(rlp);
+            TextView t = text(evT("lang_" + code), 16, sel ? Color.WHITE : evGray(), true);
+            t.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(t);
+            if (sel) row.addView(evIcon(evGlyphCheck, "✓", 22, Color.WHITE));
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    SetAppLanguage(code);
+                    OnLanguageSelected(code);
+                }
+            });
+            col.addView(row);
+        }
+    }
+
+    // =========================================================================
+    // CLAVIER, TRADUCTIONS PERSONNALISÉES, MENU PARAMÈTRES, DIALOGUE SUPPRESSION
+    // =========================================================================
+    private boolean evKbExplicit = false;
+    private final java.util.HashMap<String, String[]> evCustom = new java.util.HashMap<String, String[]>();
+    private ViewGroup evMenuTarget;
+    private ViewGroup evDelTarget;
+
+    private void evSetSoftInput(final int mode) {
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    activity.getWindow().setSoftInputMode(mode);
+                } catch (Exception e) {
+                    OnError("SetKeyboardBehavior: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void evAutoPan() {
+        if (!evKbExplicit)
+            evSetSoftInput(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+    }
+
+    private java.util.Locale evLocale() {
+        String c = evCurrentLang();
+        if ("ht".equals(c)) return new java.util.Locale("fr", "HT");
+        return new java.util.Locale(c);
+    }
+
+    @SimpleFunction(description = "Choisit comment la page réagit à l'ouverture du clavier : \"pan\" (la page n'est plus écrasée, elle se décale pour montrer le champ ; par défaut dès qu'un écran Seven ou la saisie du chat est affiché), \"nothing\" (rien ne bouge) ou \"resize\" (la page est rétrécie, comportement d'origine).")
+    public void SetKeyboardBehavior(String mode) {
+        String m = mode == null ? "" : mode.trim().toLowerCase(java.util.Locale.ROOT);
+        evKbExplicit = true;
+        if (m.equals("pan")) evSetSoftInput(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+        else if (m.equals("nothing")) evSetSoftInput(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        else if (m.equals("resize")) evSetSoftInput(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        else {
+            evKbExplicit = false;
+            OnError("SetKeyboardBehavior: mode inconnu (pan, nothing ou resize).");
+        }
+    }
+
+    @SimpleFunction(description = "Ajoute tes propres textes au dictionnaire. json = {\"scanner\":{\"fr\":\"Scanner\",\"en\":\"Scan\",\"es\":\"Escanear\"}} (codes fr, en, es, ht, pt, ar, de, it, zh). Ensuite GetTranslation(\"scanner\") suit la langue choisie. Une clé déjà existante est remplacée.")
+    public void AddTranslations(String json) {
+        try {
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            java.util.Iterator<String> keys = root.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                org.json.JSONObject langs = root.getJSONObject(k);
+                String[] arr = new String[EV_LANGS.length];
+                for (int i = 0; i < EV_LANGS.length; i++) arr[i] = langs.optString(EV_LANGS[i], "");
+                evCustom.put(k, arr);
+            }
+            evRefreshAll();
+        } catch (Exception e) {
+            OnError("AddTranslations: " + e.getMessage());
+        }
+    }
+
+    // ----------------------------- Menu Paramètres ----------------------------
+    @SimpleFunction(description = "Construit le menu Paramètres dans l'arrangement donné : Profil, Langue, Sécurité, Notification, Contacter Assistance, Conditions d'utilisation, Politique de confidentialité (Manrope gras 20, traduits). Chaque ligne a son événement : OnProfileClick, OnLanguageClick, OnSecurityClick, OnNotificationClick, OnSupportClick, OnTermsClick, OnPrivacyClick. Le titre de la page (clé settings) se pose avec GetTranslation.")
+    public void BuildSettingsMenu(final AndroidViewComponent container) {
+        if (container == null || container.getView() == null) {
+            OnError("BuildSettingsMenu: conteneur invalide.");
+            return;
+        }
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ViewGroup target = realLayout(container);
+                    if (target == null) {
+                        OnError("BuildSettingsMenu: conteneur invalide.");
+                        return;
+                    }
+                    evMenuTarget = target;
+                    evRenderMenu();
+                } catch (Exception e) {
+                    OnError("BuildSettingsMenu: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void evRenderMenu() {
+        if (evMenuTarget == null) return;
+        evMenuTarget.removeAllViews();
+        evApplyDir(evMenuTarget);
+        ScrollView sv = new ScrollView(context);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout col = new LinearLayout(context);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(wp(6f), hp(1f), wp(6f), hp(3f));
+        sv.addView(col, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        evMenuTarget.addView(sv, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        String[] ids = {"profile", "language", "security", "notification", "support", "terms", "privacy"};
+        for (int i = 0; i < ids.length; i++) {
+            final String id = ids[i];
+            TextView t = text(evT(id), 20, Color.WHITE, true);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = i == 0 ? 0 : hp(3f);
+            t.setLayoutParams(lp);
+            t.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    evMenuClick(id);
+                }
+            });
+            col.addView(t);
+        }
+    }
+
+    private void evMenuClick(String id) {
+        if ("profile".equals(id)) OnProfileClick();
+        else if ("language".equals(id)) OnLanguageClick();
+        else if ("security".equals(id)) OnSecurityClick();
+        else if ("notification".equals(id)) OnNotificationClick();
+        else if ("support".equals(id)) OnSupportClick();
+        else if ("terms".equals(id)) OnTermsClick();
+        else if ("privacy".equals(id)) OnPrivacyClick();
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Profil du menu Paramètres.")
+    public void OnProfileClick() {
+        EventDispatcher.dispatchEvent(this, "OnProfileClick");
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Langue du menu Paramètres.")
+    public void OnLanguageClick() {
+        EventDispatcher.dispatchEvent(this, "OnLanguageClick");
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Sécurité du menu Paramètres.")
+    public void OnSecurityClick() {
+        EventDispatcher.dispatchEvent(this, "OnSecurityClick");
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Notification du menu Paramètres.")
+    public void OnNotificationClick() {
+        EventDispatcher.dispatchEvent(this, "OnNotificationClick");
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Contacter Assistance du menu Paramètres.")
+    public void OnSupportClick() {
+        EventDispatcher.dispatchEvent(this, "OnSupportClick");
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Conditions d'utilisation du menu Paramètres.")
+    public void OnTermsClick() {
+        EventDispatcher.dispatchEvent(this, "OnTermsClick");
+    }
+
+    @SimpleEvent(description = "Déclenché sur la ligne Politique de confidentialité du menu Paramètres.")
+    public void OnPrivacyClick() {
+        EventDispatcher.dispatchEvent(this, "OnPrivacyClick");
+    }
+
+    // ------------------------ Dialogue de suppression -------------------------
+    @SimpleFunction(description = "Construit le contenu du dialogue « Message » (suppression d'un message du chat) dans l'arrangement donné : ligne horizontale, titre 18, texte gris 15, boutons Supprimer (rouge) et Annuler (blanc) en 14, traduits. Supprimer déclenche OnDeleteMessageConfirm, Annuler déclenche OnDeleteMessageCancel : tu fermes ton dialogue ou tu supprimes le message dans ces événements.")
+    public void BuildDeleteMessageDialog(final AndroidViewComponent container) {
+        if (container == null || container.getView() == null) {
+            OnError("BuildDeleteMessageDialog: conteneur invalide.");
+            return;
+        }
+        runOnUi(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ViewGroup target = realLayout(container);
+                    if (target == null) {
+                        OnError("BuildDeleteMessageDialog: conteneur invalide.");
+                        return;
+                    }
+                    evDelTarget = target;
+                    evRenderDelete();
+                } catch (Exception e) {
+                    OnError("BuildDeleteMessageDialog: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void evRenderDelete() {
+        if (evDelTarget == null) return;
+        LinearLayout col = evSheet(evDelTarget, evT("msg_title"));
+        TextView body = text(evT("msg_delete_warn"), 15, evGray(), false);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        blp.topMargin = hp(2.5f);
+        col.addView(body, blp);
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.topMargin = hp(8f);
+        TextView del = text(evT("delete"), 14, Color.rgb(0xE5, 0x39, 0x35), true);
+        del.setGravity(Gravity.START);
+        del.setPadding(0, dp(10), 0, dp(10));
+        del.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        del.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                OnDeleteMessageConfirm();
+            }
+        });
+        TextView cancel = text(evT("cancel"), 14, Color.WHITE, true);
+        cancel.setGravity(Gravity.END);
+        cancel.setPadding(0, dp(10), 0, dp(10));
+        cancel.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                OnDeleteMessageCancel();
+            }
+        });
+        row.addView(del);
+        row.addView(cancel);
+        col.addView(row, rlp);
+    }
+
+    @SimpleEvent(description = "Déclenché sur « Supprimer » du dialogue de suppression : supprime le message et ferme ton dialogue.")
+    public void OnDeleteMessageConfirm() {
+        EventDispatcher.dispatchEvent(this, "OnDeleteMessageConfirm");
+    }
+
+    @SimpleEvent(description = "Déclenché sur « Annuler » du dialogue de suppression : ferme ton dialogue sans supprimer.")
+    public void OnDeleteMessageCancel() {
+        EventDispatcher.dispatchEvent(this, "OnDeleteMessageCancel");
     }}
